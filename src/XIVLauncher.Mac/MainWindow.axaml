@@ -1,0 +1,49 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="520" d:DesignHeight="360"
+        x:Class="XIVLauncher.Mac.MainWindow"
+        Title="XIVLauncher"
+        Width="520"
+        Height="360"
+        MinWidth="420"
+        MinHeight="300"
+        Background="#F6F6F4">
+    <Grid RowDefinitions="Auto,*"
+          Margin="28"
+          RowSpacing="24">
+        <StackPanel Spacing="4">
+            <TextBlock Text="XIVLauncher"
+                       FontSize="22"
+                       FontWeight="SemiBold"
+                       Foreground="#202124" />
+            <TextBlock Text="macOS"
+                       FontSize="13"
+                       Foreground="#666A6D" />
+        </StackPanel>
+
+        <Border Grid.Row="1"
+                BorderBrush="#D9DAD7"
+                BorderThickness="1"
+                CornerRadius="6"
+                Background="#FFFFFF"
+                Padding="18">
+            <Grid RowDefinitions="Auto,*,Auto">
+                <TextBlock Text="Launcher setup will appear here."
+                           FontSize="15"
+                           FontWeight="Medium"
+                           Foreground="#2B2D2F" />
+                <TextBlock Grid.Row="1"
+                           Text="Settings storage is ready for the macOS host."
+                           FontSize="13"
+                           Foreground="#666A6D"
+                           VerticalAlignment="Center" />
+                <Button Grid.Row="2"
+                        HorizontalAlignment="Right"
+                        IsEnabled="False"
+                        Content="Launch" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

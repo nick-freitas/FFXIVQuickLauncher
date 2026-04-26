@@ -28,6 +28,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XIVLauncher.Common.Unix", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XIVLauncher.Aria", "XIVLauncher.Aria\XIVLauncher.Aria.csproj", "{807F8B3E-B728-4F80-A60F-5EA0352CFCC7}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XIVLauncher.Mac", "XIVLauncher.Mac\XIVLauncher.Mac.csproj", "{316670C0-00A4-4BCA-9FF8-E84F527E0C5E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XIVLauncher.Mac.Tests", "XIVLauncher.Mac.Tests\XIVLauncher.Mac.Tests.csproj", "{9BD33C4F-7802-428E-9C4A-2DA27E592116}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -62,6 +66,14 @@ Global
 		{807F8B3E-B728-4F80-A60F-5EA0352CFCC7}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{807F8B3E-B728-4F80-A60F-5EA0352CFCC7}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{807F8B3E-B728-4F80-A60F-5EA0352CFCC7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{316670C0-00A4-4BCA-9FF8-E84F527E0C5E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{316670C0-00A4-4BCA-9FF8-E84F527E0C5E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{316670C0-00A4-4BCA-9FF8-E84F527E0C5E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{316670C0-00A4-4BCA-9FF8-E84F527E0C5E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9BD33C4F-7802-428E-9C4A-2DA27E592116}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9BD33C4F-7802-428E-9C4A-2DA27E592116}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9BD33C4F-7802-428E-9C4A-2DA27E592116}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9BD33C4F-7802-428E-9C4A-2DA27E592116}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
