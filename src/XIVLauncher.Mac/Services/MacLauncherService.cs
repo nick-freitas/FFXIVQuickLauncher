@@ -32,13 +32,12 @@ public interface IXivLauncherClient
     bool LaunchGame(Launcher.LoginResult loginResult, MacLaunchRequest request, IGameRunner? runner = null);
 }
 
-public interface IMacPatchService
+public enum MacLaunchStage
 {
+    Launching,
 }
 
-public sealed class MacPatchService : IMacPatchService
-{
-}
+public sealed record MacLaunchProgress(MacLaunchStage Stage, string Message);
 
 public sealed class MacLauncherService : IMacLauncherService
 {
@@ -47,33 +46,23 @@ public sealed class MacLauncherService : IMacLauncherService
     private readonly IMacDalamudService dalamudService;
 
     public MacLauncherService()
-        : this(new XivLauncherClientFactory(), new MacPatchService(), new MacLaunchOptions(), new MacDalamudService())
+        : this(new XivLauncherClientFactory(), new MacLaunchOptions(), new MacDalamudService())
     {
     }
 
     public MacLauncherService(MacLaunchOptions launchOptions)
-        : this(new XivLauncherClientFactory(), new MacPatchService(), launchOptions, new MacDalamudService())
+        : this(new XivLauncherClientFactory(), launchOptions, new MacDalamudService())
     {
     }
 
     public MacLauncherService(IXivLauncherClientFactory clientFactory)
-        : this(clientFactory, new MacPatchService(), new MacLaunchOptions(), new MacDalamudService())
+        : this(clientFactory, new MacLaunchOptions(), new MacDalamudService())
     {
     }
 
-    public MacLauncherService(IXivLauncherClientFactory clientFactory, IMacPatchService patchService)
-        : this(clientFactory, patchService, new MacLaunchOptions(), new MacDalamudService())
-    {
-    }
-
-    public MacLauncherService(
-        IXivLauncherClientFactory clientFactory,
-        IMacPatchService patchService,
-        MacLaunchOptions launchOptions,
-        IMacDalamudService dalamudService)
+    public MacLauncherService(IXivLauncherClientFactory clientFactory, MacLaunchOptions launchOptions, IMacDalamudService dalamudService)
     {
         ArgumentNullException.ThrowIfNull(clientFactory);
-        ArgumentNullException.ThrowIfNull(patchService);
         ArgumentNullException.ThrowIfNull(launchOptions);
         ArgumentNullException.ThrowIfNull(dalamudService);
 
@@ -83,6 +72,12 @@ public sealed class MacLauncherService : IMacLauncherService
     }
 
     public async Task<MacLaunchResult> LaunchAsync(MacLaunchRequest request, CancellationToken cancellationToken = default)
+        => await this.LaunchAsync(request, progress: null, cancellationToken);
+
+    public async Task<MacLaunchResult> LaunchAsync(
+        MacLaunchRequest request,
+        IProgress<MacLaunchProgress>? progress,
+        CancellationToken cancellationToken = default)
     {
         if (request.IsSteam)
             return MacLaunchResult.Failed("Steam login is not supported in the first Mac launcher pass.");
@@ -113,6 +108,10 @@ public sealed class MacLauncherService : IMacLauncherService
         if (string.IsNullOrWhiteSpace(loginResult.UniqueId) || loginResult.OauthLogin is null)
             return MacLaunchResult.Failed("Login succeeded but did not return launch session details.");
 
+        progress?.Report(new MacLaunchProgress(
+            MacLaunchStage.Launching,
+            this.launchOptions.ExperimentalDalamud ? "Preparing Dalamud..." : "Starting game..."));
+
         if (this.launchOptions.ExperimentalDalamud)
         {
             var dalamud = await this.dalamudService.PrepareAsync(
@@ -123,6 +122,8 @@ public sealed class MacLauncherService : IMacLauncherService
 
             if (!dalamud.IsSuccess || dalamud.GameRunner is null)
                 return MacLaunchResult.Failed(dalamud.ErrorMessage ?? "Could not prepare Dalamud.");
+
+            progress?.Report(new MacLaunchProgress(MacLaunchStage.Launching, "Starting game with experimental Dalamud..."));
 
             return client.LaunchGame(loginResult, request, dalamud.GameRunner)
                 ? MacLaunchResult.Launched()

@@ -84,16 +84,19 @@ public sealed class MacLauncherServiceTests
         var dalamud = new FakeMacDalamudService();
         var service = new MacLauncherService(
             new FakeXivLauncherClientFactory(client),
-            new FakeMacPatchService(),
             new MacLaunchOptions { ExperimentalDalamud = false },
             dalamud);
+        var progress = new CollectingProgress<MacLaunchProgress>();
 
-        var result = await service.LaunchAsync(CreateRequest());
+        var result = await service.LaunchAsync(CreateRequest(), progress);
 
         Assert.AreEqual(MacLaunchResultKind.Launched, result.Kind);
         Assert.AreEqual(1, client.LaunchCalls);
         Assert.AreEqual(0, client.DalamudLaunchCalls);
         Assert.AreEqual(0, dalamud.PrepareCalls);
+        CollectionAssert.AreEqual(
+            new[] { "Starting game..." },
+            progress.Reports.Select(report => report.Message).ToArray());
     }
 
     [TestMethod]
@@ -103,16 +106,23 @@ public sealed class MacLauncherServiceTests
         var dalamud = new FakeMacDalamudService { Result = MacDalamudPrepareResult.Prepared(new FakeGameRunner()) };
         var service = new MacLauncherService(
             new FakeXivLauncherClientFactory(client),
-            new FakeMacPatchService(),
             new MacLaunchOptions { ExperimentalDalamud = true },
             dalamud);
+        var progress = new CollectingProgress<MacLaunchProgress>();
 
-        var result = await service.LaunchAsync(CreateRequest());
+        var result = await service.LaunchAsync(CreateRequest(), progress);
 
         Assert.AreEqual(MacLaunchResultKind.Launched, result.Kind);
         Assert.AreEqual(0, client.LaunchCalls);
         Assert.AreEqual(1, client.DalamudLaunchCalls);
         Assert.AreEqual(1, dalamud.PrepareCalls);
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "Preparing Dalamud...",
+                "Starting game with experimental Dalamud...",
+            },
+            progress.Reports.Select(report => report.Message).ToArray());
     }
 
     [TestMethod]
@@ -122,7 +132,6 @@ public sealed class MacLauncherServiceTests
         var dalamud = new FakeMacDalamudService { Result = MacDalamudPrepareResult.Failed("Could not prepare Dalamud: network failed") };
         var service = new MacLauncherService(
             new FakeXivLauncherClientFactory(client),
-            new FakeMacPatchService(),
             new MacLaunchOptions { ExperimentalDalamud = true },
             dalamud);
 
@@ -268,8 +277,14 @@ public sealed class MacLauncherServiceTests
             => null;
     }
 
-    private sealed class FakeMacPatchService : IMacPatchService
+    private sealed class CollectingProgress<T> : IProgress<T>
     {
+        private readonly List<T> reports = [];
+
+        public IReadOnlyList<T> Reports => this.reports;
+
+        public void Report(T value)
+            => this.reports.Add(value);
     }
 
     private sealed class FakeLauncherCore : IXivLauncherCore
