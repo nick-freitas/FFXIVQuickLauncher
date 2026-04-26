@@ -22,8 +22,7 @@ public sealed class OfficialMacAppGameRunner : IGameRunner
             WorkingDirectory = workingDirectory,
         };
 
-        psi.ArgumentList.Add(path);
-        psi.ArgumentList.Add(arguments);
+        psi.Arguments = $"\"{path}\" {arguments}";
 
         foreach (var pair in environment)
         {
