@@ -18,10 +18,12 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            var launchOptions = MacLaunchOptions.FromArgs(desktop.Args ?? []);
+
             var viewModel = new MainWindowViewModel(
                 new MacSettingsService(),
                 new MacInstallResolver(),
-                new MacLauncherService());
+                new MacLauncherService(launchOptions));
 
             desktop.MainWindow = new MainWindow
             {

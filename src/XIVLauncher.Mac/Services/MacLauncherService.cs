@@ -41,6 +41,12 @@ public sealed class MacLauncherService : IMacLauncherService
     {
     }
 
+    public MacLauncherService(MacLaunchOptions launchOptions)
+        : this(new XivLauncherClientFactory())
+    {
+        ArgumentNullException.ThrowIfNull(launchOptions);
+    }
+
     public MacLauncherService(IXivLauncherClientFactory clientFactory)
     {
         this.clientFactory = clientFactory;
