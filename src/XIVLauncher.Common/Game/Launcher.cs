@@ -12,9 +12,10 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Serilog;
-using XIVLauncher.Common.Game.Patch.PatchList;
 using XIVLauncher.Common.Encryption;
 using XIVLauncher.Common.Game.Exceptions;
+using XIVLauncher.Common.Game.Patch;
+using XIVLauncher.Common.Game.Patch.PatchList;
 using XIVLauncher.Common.Http.HappyEyeballs;
 using XIVLauncher.Common.PlatformAbstractions;
 using XIVLauncher.Common.Util;
@@ -370,8 +371,9 @@ public class Launcher
     public async Task<PatchListEntry[]> CheckBootVersion(DirectoryInfo gamePath, bool forceBaseVersion = false)
     {
         var bootVersion = forceBaseVersion ? Constants.BASE_GAME_VERSION : Repository.Boot.GetVer(gamePath);
+        var patchRoute = PatchPlatform.GetPatchRoute(PlatformHelpers.GetPlatform());
         var request = new HttpRequestMessage(HttpMethod.Get,
-            $"http://patch-bootver.ffxiv.com/http/win32/ffxivneo_release_boot/{bootVersion}/?time=" +
+            $"http://patch-bootver.ffxiv.com/http/{patchRoute}/ffxivneo_release_boot/{bootVersion}/?time=" +
             GetLauncherFormattedTimeLongRounded());
 
         request.Headers.AddWithoutValidation("User-Agent", Constants.PatcherUserAgent);
@@ -398,8 +400,9 @@ public class Launcher
 
     private async Task<(string? Uid, LoginState result, PatchListEntry[] PendingGamePatches)> RegisterSession(OauthLoginResult loginResult, DirectoryInfo gamePath, bool forceBaseVersion)
     {
+        var patchRoute = PatchPlatform.GetPatchRoute(PlatformHelpers.GetPlatform());
         var request = new HttpRequestMessage(HttpMethod.Post,
-            $"https://patch-gamever.ffxiv.com/http/win32/ffxivneo_release_game/{(forceBaseVersion ? Constants.BASE_GAME_VERSION : Repository.Ffxiv.GetVer(gamePath))}/{loginResult.SessionId}");
+            $"https://patch-gamever.ffxiv.com/http/{patchRoute}/ffxivneo_release_game/{(forceBaseVersion ? Constants.BASE_GAME_VERSION : Repository.Ffxiv.GetVer(gamePath))}/{loginResult.SessionId}");
 
         request.Headers.AddWithoutValidation("Connection", "Keep-Alive");
         request.Headers.AddWithoutValidation("User-Agent", Constants.PatcherUserAgent);
