@@ -7,7 +7,14 @@ using System.Threading.Tasks;
 
 namespace XIVLauncher.Mac.Settings;
 
-public sealed class MacSettingsService
+public interface IMacSettingsService
+{
+    Task<MacSettings> LoadAsync(CancellationToken cancellationToken = default);
+
+    Task SaveAsync(MacSettings settings, CancellationToken cancellationToken = default);
+}
+
+public sealed class MacSettingsService : IMacSettingsService
 {
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -27,12 +34,16 @@ public sealed class MacSettingsService
         this.settingsPath = settingsPath;
     }
 
-    public static string DefaultSettingsPath
+    public static string DefaultApplicationSupportDirectory
         => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             "Library",
             "Application Support",
-            "XIVLauncherMac",
+            "XIVLauncherMac");
+
+    public static string DefaultSettingsPath
+        => Path.Combine(
+            DefaultApplicationSupportDirectory,
             "settings.json");
 
     public async Task<MacSettings> LoadAsync(CancellationToken cancellationToken = default)
