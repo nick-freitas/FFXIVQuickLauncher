@@ -192,6 +192,7 @@ ClientBin/
 *.publishsettings
 node_modules/
 orleans.codegen.cs
+.worktrees/
 
 # macOS related ignores
 .DS_Store
