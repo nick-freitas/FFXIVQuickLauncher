@@ -82,7 +82,7 @@ public sealed class MacLauncherServiceTests
     {
         var client = new FakeXivLauncherClient();
         var dalamud = new FakeMacDalamudService();
-        var service = new MacLauncherService(
+        IMacLauncherService service = new MacLauncherService(
             new FakeXivLauncherClientFactory(client),
             new MacLaunchOptions { ExperimentalDalamud = false },
             dalamud);

@@ -210,8 +210,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 this.Otp.Trim(),
                 this.SelectedLanguage,
                 this.IsSteam,
-                this.IsFreeTrial);
-            var result = await this.launcherService.LaunchAsync(request);
+            this.IsFreeTrial);
+            var result = await this.launcherService.LaunchAsync(
+                request,
+                new MacLaunchStatusProgress(this));
 
             this.StatusMessage = result.Message;
         }
@@ -278,4 +280,17 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         => this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+
+    private sealed class MacLaunchStatusProgress : IProgress<MacLaunchProgress>
+    {
+        private readonly MainWindowViewModel viewModel;
+
+        public MacLaunchStatusProgress(MainWindowViewModel viewModel)
+        {
+            this.viewModel = viewModel;
+        }
+
+        public void Report(MacLaunchProgress value)
+            => this.viewModel.StatusMessage = value.Message;
+    }
 }

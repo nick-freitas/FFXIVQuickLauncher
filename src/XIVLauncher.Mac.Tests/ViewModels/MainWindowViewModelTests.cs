@@ -80,6 +80,7 @@ public sealed class MainWindowViewModelTests
         await viewModel.LaunchAsync();
 
         Assert.AreEqual(1, launcher.Requests.Count);
+        Assert.IsNotNull(launcher.LastProgress);
         Assert.AreEqual("saved-user", launcher.Requests[0].Username);
         Assert.AreEqual("do-not-save", launcher.Requests[0].Password);
         Assert.AreEqual("123456", launcher.Requests[0].Otp);
@@ -205,9 +206,15 @@ public sealed class MainWindowViewModelTests
 
         public MacLaunchResult Result { get; set; } = MacLaunchResult.Launched();
 
-        public Task<MacLaunchResult> LaunchAsync(MacLaunchRequest request, CancellationToken cancellationToken = default)
+        public IProgress<MacLaunchProgress>? LastProgress { get; private set; }
+
+        public Task<MacLaunchResult> LaunchAsync(
+            MacLaunchRequest request,
+            IProgress<MacLaunchProgress>? progress = null,
+            CancellationToken cancellationToken = default)
         {
             this.Requests.Add(request);
+            this.LastProgress = progress;
             return Task.FromResult(this.Result);
         }
     }

@@ -12,6 +12,13 @@ public sealed record MacLaunchRequest(
     bool IsSteam,
     bool IsFreeTrial);
 
+public enum MacLaunchStage
+{
+    Launching,
+}
+
+public sealed record MacLaunchProgress(MacLaunchStage Stage, string Message);
+
 public enum MacLaunchResultKind
 {
     Launched,

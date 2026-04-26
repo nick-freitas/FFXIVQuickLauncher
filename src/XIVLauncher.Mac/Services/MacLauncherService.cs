@@ -15,7 +15,10 @@ namespace XIVLauncher.Mac.Services;
 
 public interface IMacLauncherService
 {
-    Task<MacLaunchResult> LaunchAsync(MacLaunchRequest request, CancellationToken cancellationToken = default);
+    Task<MacLaunchResult> LaunchAsync(
+        MacLaunchRequest request,
+        IProgress<MacLaunchProgress>? progress = null,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IXivLauncherClientFactory
@@ -31,13 +34,6 @@ public interface IXivLauncherClient
 
     bool LaunchGame(Launcher.LoginResult loginResult, MacLaunchRequest request, IGameRunner? runner = null);
 }
-
-public enum MacLaunchStage
-{
-    Launching,
-}
-
-public sealed record MacLaunchProgress(MacLaunchStage Stage, string Message);
 
 public sealed class MacLauncherService : IMacLauncherService
 {
@@ -71,12 +67,9 @@ public sealed class MacLauncherService : IMacLauncherService
         this.dalamudService = dalamudService;
     }
 
-    public async Task<MacLaunchResult> LaunchAsync(MacLaunchRequest request, CancellationToken cancellationToken = default)
-        => await this.LaunchAsync(request, progress: null, cancellationToken);
-
     public async Task<MacLaunchResult> LaunchAsync(
         MacLaunchRequest request,
-        IProgress<MacLaunchProgress>? progress,
+        IProgress<MacLaunchProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         if (request.IsSteam)
