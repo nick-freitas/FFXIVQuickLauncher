@@ -30,9 +30,9 @@ public interface IMacDalamudUpdaterFactory
 
 public interface IMacDalamudLauncherAdapter
 {
-    void RunUpdater(string? betaKind, string? betaKey);
+    void RunUpdater(string? betaKind, string? betaKey, CancellationToken cancellationToken);
 
-    DalamudLauncher.DalamudInstallState HoldForUpdate(DirectoryInfo gamePath);
+    DalamudLauncher.DalamudInstallState HoldForUpdate(DirectoryInfo gamePath, CancellationToken cancellationToken);
 
     IGameRunner CreateGameRunner();
 }
@@ -108,11 +108,53 @@ public sealed class MacDalamudLauncherAdapter : IMacDalamudLauncherAdapter
         this.launcher = launcher;
     }
 
-    public void RunUpdater(string? betaKind, string? betaKey)
-        => this.updater.Run(betaKind, betaKey);
+    public void RunUpdater(string? betaKind, string? betaKey, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        this.updater.Run(betaKind, betaKey);
+        cancellationToken.ThrowIfCancellationRequested();
+    }
 
-    public DalamudLauncher.DalamudInstallState HoldForUpdate(DirectoryInfo gamePath)
-        => this.launcher.HoldForUpdate(gamePath);
+    public DalamudLauncher.DalamudInstallState HoldForUpdate(DirectoryInfo gamePath, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (this.updater.State != DalamudUpdater.DownloadState.Done)
+            this.updater.ShowOverlay();
+
+        while (this.updater.State != DalamudUpdater.DownloadState.Done)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (this.updater.State == DalamudUpdater.DownloadState.NoIntegrity)
+            {
+                this.updater.CloseOverlay();
+
+                if (this.updater.EnsurementException != null)
+                    throw new DalamudRunnerException("Updater returned no integrity.", this.updater.EnsurementException);
+
+                throw new DalamudRunnerException("Updater returned no integrity.");
+            }
+
+            Thread.Yield();
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!this.updater.Runner.Exists)
+            throw new DalamudRunnerException("Runner did not exist.");
+
+        var applicable = this.updater.ReCheckVersion(gamePath) ?? throw new DalamudRunnerException("ReCheckVersion returned null.");
+        if (!applicable)
+        {
+            this.updater.SetOverlayProgress(IDalamudLoadingOverlay.DalamudUpdateStep.Unavailable);
+            this.updater.ShowOverlay();
+
+            return DalamudLauncher.DalamudInstallState.OutOfDate;
+        }
+
+        return DalamudLauncher.DalamudInstallState.Ok;
+    }
 
     public IGameRunner CreateGameRunner()
         => new OfficialMacDalamudGameRunner(this.launcher);
@@ -192,9 +234,9 @@ public sealed class MacDalamudService : IMacDalamudService
             paths,
             language);
 
-        launcherAdapter.RunUpdater(betaKind: null, betaKey: null);
+        launcherAdapter.RunUpdater(betaKind: null, betaKey: null, cancellationToken);
 
-        var state = launcherAdapter.HoldForUpdate(gamePath);
+        var state = launcherAdapter.HoldForUpdate(gamePath, cancellationToken);
         if (state != DalamudLauncher.DalamudInstallState.Ok)
             return MacDalamudPrepareResult.Failed("Dalamud is unavailable for the game version.");
 

@@ -95,7 +95,7 @@ public sealed class MacDalamudServiceTests
     }
 
     [TestMethod]
-    public async Task PrepareAsyncPropagatesCancellation()
+    public async Task PrepareAsyncPropagatesPreCanceledToken()
     {
         using var cancellationTokenSource = new CancellationTokenSource();
         await cancellationTokenSource.CancelAsync();
@@ -112,6 +112,31 @@ public sealed class MacDalamudServiceTests
         catch (OperationCanceledException)
         {
         }
+    }
+
+    [TestMethod]
+    public async Task PrepareAsyncPropagatesCancellationAfterUpdaterRuns()
+    {
+        using var cancellationTokenSource = new CancellationTokenSource();
+        var launcherAdapter = new TestDalamudLauncherAdapter(
+            DalamudLauncher.DalamudInstallState.Ok,
+            cancellationTokenSource);
+        var service = new MacDalamudService(
+            new CapturingDalamudUpdaterFactory(),
+            new CapturingDalamudLauncherAdapterFactory(launcherAdapter),
+            Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")));
+
+        try
+        {
+            await service.PrepareAsync(CreateInstall(), new DirectoryInfo("/game"), ClientLanguage.English, cancellationTokenSource.Token);
+            Assert.Fail("PrepareAsync should propagate cancellation after the updater starts.");
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        Assert.IsTrue(launcherAdapter.RunUpdaterCalled);
+        Assert.IsTrue(launcherAdapter.HoldForUpdateCalled);
     }
 
     private static OfficialMacAppInstall CreateInstall()
@@ -176,18 +201,31 @@ public sealed class MacDalamudServiceTests
 
         public DirectoryInfo? HoldForUpdateGamePath { get; private set; }
 
-        public void RunUpdater(string? betaKind, string? betaKey)
+        private CancellationTokenSource? CancellationTokenSource { get; }
+
+        public TestDalamudLauncherAdapter(
+            DalamudLauncher.DalamudInstallState installState,
+            CancellationTokenSource cancellationTokenSource)
+            : this(installState)
+        {
+            this.CancellationTokenSource = cancellationTokenSource;
+        }
+
+        public void RunUpdater(string? betaKind, string? betaKey, CancellationToken cancellationToken)
         {
             Assert.IsNull(betaKind);
             Assert.IsNull(betaKey);
+            Assert.IsFalse(cancellationToken.IsCancellationRequested);
 
             this.RunUpdaterCalled = true;
+            this.CancellationTokenSource?.Cancel();
         }
 
-        public DalamudLauncher.DalamudInstallState HoldForUpdate(DirectoryInfo gamePath)
+        public DalamudLauncher.DalamudInstallState HoldForUpdate(DirectoryInfo gamePath, CancellationToken cancellationToken)
         {
             this.HoldForUpdateCalled = true;
             this.HoldForUpdateGamePath = gamePath;
+            cancellationToken.ThrowIfCancellationRequested();
 
             return this.installState;
         }
