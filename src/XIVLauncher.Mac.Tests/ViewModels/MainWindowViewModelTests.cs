@@ -92,6 +92,33 @@ public sealed class MainWindowViewModelTests
     }
 
     [TestMethod]
+    public async Task LaunchAsyncReResolvesEditedOverrideBeforeLaunching()
+    {
+        var defaultInstall = CreateInstall("/Applications/FINAL FANTASY XIV ONLINE.app");
+        var overrideInstall = CreateInstall("/Applications/Custom.app");
+        var settingsService = new FakeSettingsService(new MacSettings());
+        var resolver = new FakeInstallResolver(path =>
+            path == overrideInstall.AppBundle.FullName
+                ? MacInstallResolution.Found(overrideInstall)
+                : MacInstallResolution.Found(defaultInstall));
+        var launcher = new FakeLauncherService { Result = MacLaunchResult.Launched() };
+        var viewModel = new MainWindowViewModel(settingsService, resolver, launcher);
+
+        await viewModel.InitializeAsync();
+        viewModel.Username = "saved-user";
+        viewModel.Password = "do-not-save";
+        viewModel.OfficialAppPathOverride = overrideInstall.AppBundle.FullName;
+
+        await viewModel.LaunchAsync();
+
+        Assert.AreEqual(overrideInstall.AppBundle.FullName, launcher.Requests[0].Install.AppBundle.FullName);
+        Assert.AreEqual(overrideInstall.GameRoot.FullName, launcher.Requests[0].Install.GameRoot.FullName);
+        Assert.AreEqual(overrideInstall.AppBundle.FullName, viewModel.ResolvedAppPath);
+        Assert.IsNotNull(settingsService.SavedSettings);
+        Assert.AreEqual(overrideInstall.AppBundle.FullName, settingsService.SavedSettings.OfficialAppPathOverride);
+    }
+
+    [TestMethod]
     public async Task InitializeAsyncReportsSettingsLoadFailure()
     {
         var settingsService = new FakeSettingsService(new MacSettings())
@@ -151,11 +178,16 @@ public sealed class MainWindowViewModelTests
 
     private sealed class FakeInstallResolver : IMacInstallResolver
     {
-        private readonly MacInstallResolution resolution;
+        private readonly Func<string?, MacInstallResolution> resolve;
 
         public FakeInstallResolver(MacInstallResolution resolution)
+            : this(_ => resolution)
         {
-            this.resolution = resolution;
+        }
+
+        public FakeInstallResolver(Func<string?, MacInstallResolution> resolve)
+        {
+            this.resolve = resolve;
         }
 
         public string? LastOverridePath { get; private set; }
@@ -163,7 +195,7 @@ public sealed class MainWindowViewModelTests
         public MacInstallResolution Resolve(string? officialAppPathOverride)
         {
             this.LastOverridePath = officialAppPathOverride;
-            return this.resolution;
+            return this.resolve(officialAppPathOverride);
         }
     }
 

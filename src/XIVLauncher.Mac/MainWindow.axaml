@@ -144,8 +144,10 @@
                         Spacing="20">
                 <CheckBox Content="Free trial"
                           IsChecked="{Binding IsFreeTrial}" />
-                <CheckBox Content="Steam"
-                          IsChecked="{Binding IsSteam}" />
+                <CheckBox Content="Steam unsupported"
+                          IsChecked="{Binding IsSteam}"
+                          IsEnabled="False"
+                          ToolTip.Tip="Steam accounts are not supported in this first Mac launcher pass." />
             </StackPanel>
         </Grid>
 

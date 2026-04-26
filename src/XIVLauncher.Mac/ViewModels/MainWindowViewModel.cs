@@ -187,7 +187,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public async Task LaunchAsync()
     {
-        if (!this.CanLaunch || this.install is null)
+        if (this.IsBusy ||
+            string.IsNullOrWhiteSpace(this.Username) ||
+            string.IsNullOrWhiteSpace(this.Password))
+            return;
+
+        this.ResolveInstall();
+
+        if (this.install is null)
             return;
 
         this.IsBusy = true;
