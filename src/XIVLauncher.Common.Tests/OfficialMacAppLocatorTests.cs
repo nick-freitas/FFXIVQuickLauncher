@@ -28,10 +28,31 @@ namespace XIVLauncher.Common.Tests
             var result = OfficialMacAppLocator.TryResolve(root);
 
             Assert.IsNotNull(result);
+            var expectedWinePrefix = Path.Combine(
+                root.FullName,
+                "Contents",
+                "SharedSupport",
+                "finalfantasyxiv",
+                "support",
+                "published_Final_Fantasy");
+            var expectedGameRoot = Path.Combine(
+                expectedWinePrefix,
+                "drive_c",
+                "Program Files (x86)",
+                "SquareEnix",
+                "FINAL FANTASY XIV - A Realm Reborn");
+            var expectedWineExecutable = Path.Combine(
+                root.FullName,
+                "Contents",
+                "SharedSupport",
+                "finalfantasyxiv",
+                "FINAL FANTASY XIV ONLINE",
+                "wine");
+
             Assert.AreEqual(root.FullName, result.AppBundle.FullName);
-            Assert.IsTrue(result.GameRoot.FullName.EndsWith("FINAL FANTASY XIV - A Realm Reborn"));
-            Assert.IsTrue(result.WineExecutable.FullName.EndsWith("FINAL FANTASY XIV ONLINE/wine"));
-            Assert.IsTrue(result.WinePrefix.FullName.EndsWith("support/published_Final_Fantasy"));
+            Assert.AreEqual(expectedGameRoot, result.GameRoot.FullName);
+            Assert.AreEqual(expectedWineExecutable, result.WineExecutable.FullName);
+            Assert.AreEqual(expectedWinePrefix, result.WinePrefix.FullName);
         }
 
         [TestMethod]
