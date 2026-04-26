@@ -23,6 +23,9 @@ public sealed class OfficialMacWinePathConverter
 
         var fullPath = Path.GetFullPath(path);
 
+        if (string.Equals(fullPath, this.driveCRoot, StringComparison.Ordinal))
+            return @"C:\";
+
         if (fullPath.StartsWith(this.driveCRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal))
         {
             var relative = fullPath[(this.driveCRoot.Length + 1)..];
