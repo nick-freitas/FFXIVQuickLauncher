@@ -29,27 +29,57 @@ public interface IXivLauncherClient
 
     Task<Launcher.LoginResult> LoginAsync(MacLaunchRequest request, CancellationToken cancellationToken = default);
 
-    bool LaunchGame(Launcher.LoginResult loginResult, MacLaunchRequest request);
+    bool LaunchGame(Launcher.LoginResult loginResult, MacLaunchRequest request, IGameRunner? runner = null);
+}
+
+public interface IMacPatchService
+{
+}
+
+public sealed class MacPatchService : IMacPatchService
+{
 }
 
 public sealed class MacLauncherService : IMacLauncherService
 {
     private readonly IXivLauncherClientFactory clientFactory;
+    private readonly MacLaunchOptions launchOptions;
+    private readonly IMacDalamudService dalamudService;
 
     public MacLauncherService()
-        : this(new XivLauncherClientFactory())
+        : this(new XivLauncherClientFactory(), new MacPatchService(), new MacLaunchOptions(), new MacDalamudService())
     {
     }
 
     public MacLauncherService(MacLaunchOptions launchOptions)
-        : this(new XivLauncherClientFactory())
+        : this(new XivLauncherClientFactory(), new MacPatchService(), launchOptions, new MacDalamudService())
     {
-        ArgumentNullException.ThrowIfNull(launchOptions);
     }
 
     public MacLauncherService(IXivLauncherClientFactory clientFactory)
+        : this(clientFactory, new MacPatchService(), new MacLaunchOptions(), new MacDalamudService())
     {
+    }
+
+    public MacLauncherService(IXivLauncherClientFactory clientFactory, IMacPatchService patchService)
+        : this(clientFactory, patchService, new MacLaunchOptions(), new MacDalamudService())
+    {
+    }
+
+    public MacLauncherService(
+        IXivLauncherClientFactory clientFactory,
+        IMacPatchService patchService,
+        MacLaunchOptions launchOptions,
+        IMacDalamudService dalamudService)
+    {
+        ArgumentNullException.ThrowIfNull(clientFactory);
+        ArgumentNullException.ThrowIfNull(patchService);
+        ArgumentNullException.ThrowIfNull(launchOptions);
+        ArgumentNullException.ThrowIfNull(dalamudService);
+
         this.clientFactory = clientFactory;
+        this.launchOptions = launchOptions;
+        this.dalamudService = dalamudService;
     }
 
     public async Task<MacLaunchResult> LaunchAsync(MacLaunchRequest request, CancellationToken cancellationToken = default)
@@ -82,6 +112,22 @@ public sealed class MacLauncherService : IMacLauncherService
 
         if (string.IsNullOrWhiteSpace(loginResult.UniqueId) || loginResult.OauthLogin is null)
             return MacLaunchResult.Failed("Login succeeded but did not return launch session details.");
+
+        if (this.launchOptions.ExperimentalDalamud)
+        {
+            var dalamud = await this.dalamudService.PrepareAsync(
+                request.Install,
+                request.Install.GameRoot,
+                request.Language,
+                cancellationToken);
+
+            if (!dalamud.IsSuccess || dalamud.GameRunner is null)
+                return MacLaunchResult.Failed(dalamud.ErrorMessage ?? "Could not prepare Dalamud.");
+
+            return client.LaunchGame(loginResult, request, dalamud.GameRunner)
+                ? MacLaunchResult.Launched()
+                : MacLaunchResult.Failed("Game process did not start through experimental Dalamud.");
+        }
 
         return client.LaunchGame(loginResult, request)
             ? MacLaunchResult.Launched()
@@ -127,7 +173,7 @@ public interface IXivLauncherCore
         bool isFreeTrial,
         ClientLanguage language);
 
-    bool LaunchGame(Launcher.LoginResult loginResult, MacLaunchRequest request);
+    bool LaunchGame(Launcher.LoginResult loginResult, MacLaunchRequest request, IGameRunner? runner = null);
 }
 
 public sealed class XivLauncherClient : IXivLauncherClient
@@ -159,8 +205,8 @@ public sealed class XivLauncherClient : IXivLauncherClient
             request.IsFreeTrial,
             request.Language);
 
-    public bool LaunchGame(Launcher.LoginResult loginResult, MacLaunchRequest request)
-        => this.launcher.LaunchGame(loginResult, request);
+    public bool LaunchGame(Launcher.LoginResult loginResult, MacLaunchRequest request, IGameRunner? runner = null)
+        => this.launcher.LaunchGame(loginResult, request, runner);
 }
 
 public sealed class XivLauncherCore : IXivLauncherCore
@@ -196,10 +242,10 @@ public sealed class XivLauncherCore : IXivLauncherCore
             isFreeTrial,
             language);
 
-    public bool LaunchGame(Launcher.LoginResult loginResult, MacLaunchRequest request)
+    public bool LaunchGame(Launcher.LoginResult loginResult, MacLaunchRequest request, IGameRunner? runner = null)
     {
         var process = this.launcher.LaunchGame(
-            new OfficialMacAppGameRunner(request.Install),
+            runner ?? new OfficialMacAppGameRunner(request.Install),
             loginResult.UniqueId!,
             loginResult.OauthLogin!.Region,
             loginResult.OauthLogin.MaxExpansion,

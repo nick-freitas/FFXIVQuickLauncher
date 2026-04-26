@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using XIVLauncher.Common;
 using XIVLauncher.Common.Game;
 using XIVLauncher.Common.Game.OfficialMacApp;
 using XIVLauncher.Common.Game.Patch.PatchList;
+using XIVLauncher.Common.PlatformAbstractions;
 using XIVLauncher.Mac.Services;
 
 namespace XIVLauncher.Mac.Tests.Services;
@@ -73,6 +75,63 @@ public sealed class MacLauncherServiceTests
         Assert.AreEqual(MacLaunchResultKind.Launched, result.Kind);
         Assert.AreEqual(1, client.LoginCalls);
         Assert.AreEqual(1, client.LaunchCalls);
+    }
+
+    [TestMethod]
+    public async Task LaunchAsyncUsesNormalLaunchPathWhenExperimentalDalamudIsDisabled()
+    {
+        var client = new FakeXivLauncherClient();
+        var dalamud = new FakeMacDalamudService();
+        var service = new MacLauncherService(
+            new FakeXivLauncherClientFactory(client),
+            new FakeMacPatchService(),
+            new MacLaunchOptions { ExperimentalDalamud = false },
+            dalamud);
+
+        var result = await service.LaunchAsync(CreateRequest());
+
+        Assert.AreEqual(MacLaunchResultKind.Launched, result.Kind);
+        Assert.AreEqual(1, client.LaunchCalls);
+        Assert.AreEqual(0, client.DalamudLaunchCalls);
+        Assert.AreEqual(0, dalamud.PrepareCalls);
+    }
+
+    [TestMethod]
+    public async Task LaunchAsyncUsesDalamudLaunchPathWhenExperimentalDalamudIsEnabled()
+    {
+        var client = new FakeXivLauncherClient();
+        var dalamud = new FakeMacDalamudService { Result = MacDalamudPrepareResult.Prepared(new FakeGameRunner()) };
+        var service = new MacLauncherService(
+            new FakeXivLauncherClientFactory(client),
+            new FakeMacPatchService(),
+            new MacLaunchOptions { ExperimentalDalamud = true },
+            dalamud);
+
+        var result = await service.LaunchAsync(CreateRequest());
+
+        Assert.AreEqual(MacLaunchResultKind.Launched, result.Kind);
+        Assert.AreEqual(0, client.LaunchCalls);
+        Assert.AreEqual(1, client.DalamudLaunchCalls);
+        Assert.AreEqual(1, dalamud.PrepareCalls);
+    }
+
+    [TestMethod]
+    public async Task LaunchAsyncReportsDalamudPreparationFailure()
+    {
+        var client = new FakeXivLauncherClient();
+        var dalamud = new FakeMacDalamudService { Result = MacDalamudPrepareResult.Failed("Could not prepare Dalamud: network failed") };
+        var service = new MacLauncherService(
+            new FakeXivLauncherClientFactory(client),
+            new FakeMacPatchService(),
+            new MacLaunchOptions { ExperimentalDalamud = true },
+            dalamud);
+
+        var result = await service.LaunchAsync(CreateRequest());
+
+        Assert.AreEqual(MacLaunchResultKind.Failed, result.Kind);
+        StringAssert.Contains(result.Message, "Could not prepare Dalamud");
+        Assert.AreEqual(0, client.LaunchCalls);
+        Assert.AreEqual(0, client.DalamudLaunchCalls);
     }
 
     [TestMethod]
@@ -164,6 +223,8 @@ public sealed class MacLauncherServiceTests
 
         public int LaunchCalls { get; private set; }
 
+        public int DalamudLaunchCalls { get; private set; }
+
         public Task<PatchListEntry[]> CheckBootVersionAsync(DirectoryInfo gamePath, CancellationToken cancellationToken = default)
             => Task.FromResult(this.BootPatches);
 
@@ -173,11 +234,42 @@ public sealed class MacLauncherServiceTests
             return Task.FromResult(this.LoginResult);
         }
 
-        public bool LaunchGame(Launcher.LoginResult loginResult, MacLaunchRequest request)
+        public bool LaunchGame(Launcher.LoginResult loginResult, MacLaunchRequest request, IGameRunner? runner = null)
         {
-            this.LaunchCalls++;
+            if (runner is null)
+                this.LaunchCalls++;
+            else
+                this.DalamudLaunchCalls++;
+
             return true;
         }
+    }
+
+    private sealed class FakeMacDalamudService : IMacDalamudService
+    {
+        public MacDalamudPrepareResult Result { get; set; } = MacDalamudPrepareResult.Failed("not configured");
+
+        public int PrepareCalls { get; private set; }
+
+        public Task<MacDalamudPrepareResult> PrepareAsync(
+            OfficialMacAppInstall install,
+            DirectoryInfo gamePath,
+            ClientLanguage language,
+            CancellationToken cancellationToken)
+        {
+            this.PrepareCalls++;
+            return Task.FromResult(this.Result);
+        }
+    }
+
+    private sealed class FakeGameRunner : IGameRunner
+    {
+        public Process? Start(string path, string workingDirectory, string arguments, IDictionary<string, string> environment, DpiAwareness dpiAwareness)
+            => null;
+    }
+
+    private sealed class FakeMacPatchService : IMacPatchService
+    {
     }
 
     private sealed class FakeLauncherCore : IXivLauncherCore
@@ -215,7 +307,7 @@ public sealed class MacLauncherServiceTests
             });
         }
 
-        public bool LaunchGame(Launcher.LoginResult loginResult, MacLaunchRequest request)
+        public bool LaunchGame(Launcher.LoginResult loginResult, MacLaunchRequest request, IGameRunner? runner = null)
             => true;
     }
 }
