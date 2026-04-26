@@ -1,0 +1,182 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:XIVLauncher.Mac.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="640" d:DesignHeight="560"
+        x:Class="XIVLauncher.Mac.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="XIVLauncher"
+        Width="640"
+        Height="560"
+        MinWidth="560"
+        MinHeight="500"
+        Background="#F7F6F2">
+    <Window.Styles>
+        <Style Selector="TextBlock.label">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#626760" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TextBox">
+            <Setter Property="MinHeight" Value="32" />
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="MinHeight" Value="32" />
+        </Style>
+        <Style Selector="Button">
+            <Setter Property="MinHeight" Value="32" />
+        </Style>
+        <Style Selector="CheckBox">
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto"
+          Margin="28"
+          RowSpacing="18">
+        <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="3">
+                <TextBlock Text="XIVLauncher"
+                           FontSize="22"
+                           FontWeight="SemiBold"
+                           Foreground="#202124" />
+                <TextBlock Text="macOS official app launch"
+                           FontSize="13"
+                           Foreground="#626760" />
+            </StackPanel>
+            <Button Grid.Column="1"
+                    Command="{Binding RefreshInstallCommand}"
+                    Content="Refresh Install"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center" />
+        </Grid>
+
+        <Border Grid.Row="1"
+                BorderBrush="#D7D9D2"
+                BorderThickness="1"
+                CornerRadius="6"
+                Background="#FFFFFF"
+                Padding="14">
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto"
+                  ColumnDefinitions="110,*"
+                  RowSpacing="8"
+                  ColumnSpacing="12">
+                <TextBlock Grid.ColumnSpan="2"
+                           Text="{Binding InstallStatus}"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Foreground="#222522"
+                           TextWrapping="Wrap" />
+
+                <TextBlock Grid.Row="1"
+                           Classes="label"
+                           Text="App bundle" />
+                <TextBlock Grid.Row="1"
+                           Grid.Column="1"
+                           Text="{Binding ResolvedAppPathDisplay}"
+                           FontSize="12"
+                           Foreground="#303431"
+                           TextWrapping="Wrap" />
+
+                <TextBlock Grid.Row="2"
+                           Classes="label"
+                           Text="Game root" />
+                <TextBlock Grid.Row="2"
+                           Grid.Column="1"
+                           Text="{Binding GameRootPathDisplay}"
+                           FontSize="12"
+                           Foreground="#303431"
+                           TextWrapping="Wrap" />
+
+                <TextBlock Grid.Row="3"
+                           Classes="label"
+                           Text="Override" />
+                <TextBox Grid.Row="3"
+                         Grid.Column="1"
+                         Text="{Binding OfficialAppPathOverride}"
+                         PlaceholderText="/Applications/FINAL FANTASY XIV ONLINE.app" />
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="2"
+              RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+              ColumnDefinitions="110,*"
+              RowSpacing="12"
+              ColumnSpacing="12"
+              VerticalAlignment="Top">
+            <TextBlock Classes="label"
+                       Text="Username" />
+            <TextBox Grid.Column="1"
+                     Text="{Binding Username}"
+                     PlaceholderText="Square Enix ID" />
+
+            <TextBlock Grid.Row="1"
+                       Classes="label"
+                       Text="Password" />
+            <TextBox Grid.Row="1"
+                     Grid.Column="1"
+                     Text="{Binding Password}"
+                     PasswordChar="*"
+                     PlaceholderText="Password" />
+
+            <TextBlock Grid.Row="2"
+                       Classes="label"
+                       Text="One-time pass" />
+            <TextBox Grid.Row="2"
+                     Grid.Column="1"
+                     Text="{Binding Otp}"
+                     PlaceholderText="Optional OTP" />
+
+            <TextBlock Grid.Row="3"
+                       Classes="label"
+                       Text="Language" />
+            <ComboBox Grid.Row="3"
+                      Grid.Column="1"
+                      ItemsSource="{Binding Languages}"
+                      SelectedItem="{Binding SelectedLanguage}"
+                      HorizontalAlignment="Left"
+                      MinWidth="160" />
+
+            <StackPanel Grid.Row="4"
+                        Grid.Column="1"
+                        Orientation="Horizontal"
+                        Spacing="20">
+                <CheckBox Content="Free trial"
+                          IsChecked="{Binding IsFreeTrial}" />
+                <CheckBox Content="Steam unsupported"
+                          IsChecked="{Binding IsSteam}"
+                          IsEnabled="False"
+                          ToolTip.Tip="Steam accounts are not supported in this first Mac launcher pass." />
+            </StackPanel>
+        </Grid>
+
+        <Border Grid.Row="3"
+                BorderBrush="#D7D9D2"
+                BorderThickness="1,0,0,0"
+                Padding="0,16,0,0">
+            <Grid ColumnDefinitions="*,Auto"
+                  RowDefinitions="Auto,Auto"
+                  ColumnSpacing="18"
+                  RowSpacing="8">
+                <TextBlock Text="{Binding StatusMessage}"
+                           FontSize="13"
+                           Foreground="#303431"
+                           TextWrapping="Wrap"
+                           VerticalAlignment="Center" />
+                <Button Grid.Column="1"
+                        Command="{Binding LaunchCommand}"
+                        Content="Launch"
+                        MinWidth="104"
+                        HorizontalAlignment="Right" />
+                <ProgressBar Grid.Row="1"
+                             Grid.ColumnSpan="2"
+                             IsIndeterminate="True"
+                             IsVisible="{Binding IsBusy}"
+                             Height="3"
+                             Foreground="#B23B34"
+                             Background="#E7E5DF" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
