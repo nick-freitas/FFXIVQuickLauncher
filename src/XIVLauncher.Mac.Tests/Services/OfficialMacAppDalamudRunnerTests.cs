@@ -31,6 +31,8 @@ public sealed class OfficialMacAppDalamudRunnerTests
         Assert.AreEqual(install.WineExecutable.FullName, plan.FileName);
         Assert.AreEqual("DEV.TestSID", plan.Arguments.Split("-- ").Last());
         Assert.AreEqual(install.WinePrefix.FullName, plan.Environment["WINEPREFIX"]);
+        Assert.AreEqual(@"Z:\runtime", plan.Environment["DALAMUD_RUNTIME"]);
+        Assert.AreEqual(@"Z:\runtime", plan.Environment["DOTNET_ROOT"]);
         StringAssert.Contains(plan.Arguments, @"""Z:\Users\test\Library\Application Support\XIVLauncherMac\addon\Hooks\1\Dalamud.Injector.exe""");
         StringAssert.Contains(plan.Arguments, "--mode=inject");
         StringAssert.Contains(plan.Arguments, @"--game=""C:\game\ffxiv_dx11.exe""");
@@ -55,6 +57,46 @@ public sealed class OfficialMacAppDalamudRunnerTests
         StringAssert.Contains(plan.Arguments, "--no-plugin");
         StringAssert.Contains(plan.Arguments, "--no-3rd-plugin");
         StringAssert.Contains(plan.Arguments, "--mode=entrypoint");
+    }
+
+    [TestMethod]
+    public void BuildStartInfoAddsWithoutDalamudForAclOnly()
+    {
+        var plan = OfficialMacAppDalamudRunner.BuildLaunchPlan(
+            CreateInstall(),
+            new FileInfo("/runner/Dalamud.Injector.exe"),
+            fakeLogin: false,
+            noPlugins: false,
+            noThirdPlugins: false,
+            gameExe: new FileInfo("/game/ffxiv_dx11.exe"),
+            gameArgs: "args",
+            environment: new Dictionary<string, string>(),
+            loadMethod: DalamudLoadMethod.ACLonly,
+            CreateDalamudStartInfo());
+
+        StringAssert.Contains(plan.Arguments, "--without-dalamud");
+    }
+
+    [TestMethod]
+    public void BuildStartInfoConvertsDalamudPaths()
+    {
+        var plan = OfficialMacAppDalamudRunner.BuildLaunchPlan(
+            CreateInstall(),
+            new FileInfo("/runner/Dalamud.Injector.exe"),
+            fakeLogin: false,
+            noPlugins: false,
+            noThirdPlugins: false,
+            gameExe: new FileInfo("/game/ffxiv_dx11.exe"),
+            gameArgs: "args",
+            environment: new Dictionary<string, string>(),
+            loadMethod: DalamudLoadMethod.DllInject,
+            CreateDalamudStartInfo());
+
+        StringAssert.Contains(plan.Arguments, @"--dalamud-working-directory=""Z:\Users\test\Library\Application Support\XIVLauncherMac\addon\Hooks\1""");
+        StringAssert.Contains(plan.Arguments, @"--dalamud-configuration-path=""Z:\Users\test\Library\Application Support\XIVLauncherMac\dalamudConfig.json""");
+        StringAssert.Contains(plan.Arguments, @"--logpath=""Z:\Users\test\Library\Application Support\XIVLauncherMac\logs""");
+        StringAssert.Contains(plan.Arguments, @"--dalamud-plugin-directory=""Z:\Users\test\Library\Application Support\XIVLauncherMac\installedPlugins""");
+        StringAssert.Contains(plan.Arguments, @"--dalamud-asset-directory=""Z:\Users\test\Library\Application Support\XIVLauncherMac\dalamudAssets\1""");
     }
 
     private static OfficialMacAppInstall CreateInstall()

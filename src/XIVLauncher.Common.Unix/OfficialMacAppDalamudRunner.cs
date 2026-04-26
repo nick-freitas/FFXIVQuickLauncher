@@ -178,15 +178,34 @@ public sealed class OfficialMacAppDalamudRunner : IDalamudRunner
     }
 
     private static void StartLogThread(StreamReader reader, string logPrefix)
-        => new Thread(() =>
+    {
+        var thread = new Thread(() =>
         {
-            while (!reader.EndOfStream)
+            try
             {
-                var logOutput = reader.ReadLine();
-                if (logOutput != null)
-                    Log.Information("[{LogPrefix}] {Log}", logPrefix, logOutput);
+                while (!reader.EndOfStream)
+                {
+                    var logOutput = reader.ReadLine();
+                    if (logOutput != null)
+                        Log.Information("[{LogPrefix}] {Log}", logPrefix, logOutput);
+                }
             }
-        }).Start();
+            catch (IOException ex)
+            {
+                Log.Debug(ex, "Stopped reading {LogPrefix} output.", logPrefix);
+            }
+            catch (ObjectDisposedException ex)
+            {
+                Log.Debug(ex, "Stopped reading {LogPrefix} output.", logPrefix);
+            }
+        })
+        {
+            IsBackground = true,
+            Name = $"OfficialMacAppDalamudRunner {logPrefix}",
+        };
+
+        thread.Start();
+    }
 }
 
 public sealed record OfficialMacDalamudLaunchPlan(
