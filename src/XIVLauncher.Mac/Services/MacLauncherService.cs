@@ -9,7 +9,6 @@ using XIVLauncher.Common.Game.Patch.PatchList;
 using XIVLauncher.Common.PlatformAbstractions;
 using XIVLauncher.Common.Unix;
 using XIVLauncher.Common.Util;
-using XIVLauncher.Mac.Settings;
 using XIVLauncher.PlatformAbstractions;
 
 namespace XIVLauncher.Mac.Services;
@@ -38,7 +37,7 @@ public sealed class MacLauncherService : IMacLauncherService
     private readonly IXivLauncherClientFactory clientFactory;
 
     public MacLauncherService()
-        : this(new XivLauncherClientFactory(MacSettingsService.DefaultApplicationSupportDirectory))
+        : this(new XivLauncherClientFactory())
     {
     }
 
@@ -49,6 +48,9 @@ public sealed class MacLauncherService : IMacLauncherService
 
     public async Task<MacLaunchResult> LaunchAsync(MacLaunchRequest request, CancellationToken cancellationToken = default)
     {
+        if (request.IsSteam)
+            return MacLaunchResult.Failed("Steam login is not supported in the first Mac launcher pass.");
+
         var client = await this.clientFactory.CreateAsync(cancellationToken);
         var bootPatches = await client.CheckBootVersionAsync(request.Install.GameRoot, cancellationToken);
 
@@ -83,54 +85,110 @@ public sealed class MacLauncherService : IMacLauncherService
 
 public sealed class XivLauncherClientFactory : IXivLauncherClientFactory
 {
-    private readonly string applicationSupportDirectory;
     private readonly HttpClient httpClient;
 
-    public XivLauncherClientFactory(string applicationSupportDirectory)
-        : this(applicationSupportDirectory, new HttpClient())
+    public XivLauncherClientFactory()
+        : this(new HttpClient())
     {
     }
 
-    public XivLauncherClientFactory(string applicationSupportDirectory, HttpClient httpClient)
+    public XivLauncherClientFactory(HttpClient httpClient)
     {
-        this.applicationSupportDirectory = applicationSupportDirectory;
         this.httpClient = httpClient;
     }
 
     public async Task<IXivLauncherClient> CreateAsync(CancellationToken cancellationToken = default)
     {
-        Directory.CreateDirectory(this.applicationSupportDirectory);
         var frontierUrl = await DebugHelpers.GetFrontierUrlForDebugAsync(this.httpClient);
-        var uidCachePath = new FileInfo(Path.Combine(this.applicationSupportDirectory, "uidCache.json"));
-        var launcher = new Launcher((ISteam?)null, new CommonUniqueIdCache(uidCachePath), frontierUrl, ApiHelpers.GenerateAcceptLanguage());
+        var launcher = new Launcher((ISteam?)null, new CommonUniqueIdCache(null), frontierUrl, ApiHelpers.GenerateAcceptLanguage());
 
         return new XivLauncherClient(launcher);
     }
 }
 
+public interface IXivLauncherCore
+{
+    Task<PatchListEntry[]> CheckBootVersionAsync(DirectoryInfo gamePath);
+
+    Task<Launcher.LoginResult> LoginAsync(
+        string username,
+        string password,
+        string otp,
+        bool isSteam,
+        bool useCache,
+        DirectoryInfo gamePath,
+        bool forceBaseVersion,
+        bool isFreeTrial,
+        ClientLanguage language);
+
+    bool LaunchGame(Launcher.LoginResult loginResult, MacLaunchRequest request);
+}
+
 public sealed class XivLauncherClient : IXivLauncherClient
 {
-    private readonly Launcher launcher;
+    private readonly IXivLauncherCore launcher;
 
     public XivLauncherClient(Launcher launcher)
+        : this(new XivLauncherCore(launcher))
+    {
+    }
+
+    public XivLauncherClient(IXivLauncherCore launcher)
     {
         this.launcher = launcher;
     }
 
     public Task<PatchListEntry[]> CheckBootVersionAsync(DirectoryInfo gamePath, CancellationToken cancellationToken = default)
-        => this.launcher.CheckBootVersion(gamePath);
+        => this.launcher.CheckBootVersionAsync(gamePath);
 
     public Task<Launcher.LoginResult> LoginAsync(MacLaunchRequest request, CancellationToken cancellationToken = default)
-        => this.launcher.Login(
+        => this.launcher.LoginAsync(
             request.Username,
             request.Password,
             request.Otp,
             request.IsSteam,
-            useCache: true,
+            useCache: false,
             request.Install.GameRoot,
             forceBaseVersion: false,
             request.IsFreeTrial,
             request.Language);
+
+    public bool LaunchGame(Launcher.LoginResult loginResult, MacLaunchRequest request)
+        => this.launcher.LaunchGame(loginResult, request);
+}
+
+public sealed class XivLauncherCore : IXivLauncherCore
+{
+    private readonly Launcher launcher;
+
+    public XivLauncherCore(Launcher launcher)
+    {
+        this.launcher = launcher;
+    }
+
+    public Task<PatchListEntry[]> CheckBootVersionAsync(DirectoryInfo gamePath)
+        => this.launcher.CheckBootVersion(gamePath);
+
+    public Task<Launcher.LoginResult> LoginAsync(
+        string username,
+        string password,
+        string otp,
+        bool isSteam,
+        bool useCache,
+        DirectoryInfo gamePath,
+        bool forceBaseVersion,
+        bool isFreeTrial,
+        ClientLanguage language)
+        => this.launcher.Login(
+            username,
+            password,
+            otp,
+            isSteam,
+            useCache,
+            gamePath,
+            forceBaseVersion,
+            isFreeTrial,
+            language);
 
     public bool LaunchGame(Launcher.LoginResult loginResult, MacLaunchRequest request)
     {

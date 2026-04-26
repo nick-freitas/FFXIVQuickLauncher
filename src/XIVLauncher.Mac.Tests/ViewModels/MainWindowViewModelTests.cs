@@ -31,6 +31,7 @@ public sealed class MainWindowViewModelTests
         Assert.IsTrue(viewModel.IsInstallDetected);
         Assert.AreEqual(install.AppBundle.FullName, viewModel.ResolvedAppPath);
         Assert.AreEqual(install.GameRoot.FullName, viewModel.GameRootPath);
+        Assert.AreEqual(install.GameRoot.FullName, viewModel.GameRootPathDisplay);
         Assert.AreEqual("saved-user", viewModel.Username);
         Assert.AreEqual(ClientLanguage.German, viewModel.SelectedLanguage);
         Assert.IsTrue(viewModel.IsFreeTrial);
@@ -55,6 +56,7 @@ public sealed class MainWindowViewModelTests
         Assert.IsFalse(viewModel.IsInstallDetected);
         Assert.IsFalse(viewModel.CanLaunch);
         Assert.IsFalse(viewModel.LaunchCommand.CanExecute(null));
+        Assert.AreEqual("Not resolved", viewModel.GameRootPathDisplay);
         StringAssert.Contains(viewModel.InstallStatus, "Set the app path override");
     }
 
@@ -89,6 +91,26 @@ public sealed class MainWindowViewModelTests
         Assert.IsTrue(settingsService.SavedSettings.IsSteam);
     }
 
+    [TestMethod]
+    public async Task InitializeAsyncReportsSettingsLoadFailure()
+    {
+        var settingsService = new FakeSettingsService(new MacSettings())
+        {
+            LoadException = new InvalidOperationException("settings json is invalid"),
+        };
+        var viewModel = new MainWindowViewModel(
+            settingsService,
+            new FakeInstallResolver(MacInstallResolution.NotFound("/Applications/FINAL FANTASY XIV ONLINE.app", "not resolved")),
+            new FakeLauncherService());
+
+        await viewModel.InitializeAsync();
+
+        StringAssert.Contains(viewModel.StatusMessage, "Could not load Mac settings");
+        StringAssert.Contains(viewModel.StatusMessage, "settings json is invalid");
+        Assert.IsFalse(viewModel.IsInstallDetected);
+        Assert.AreEqual("Not resolved", viewModel.GameRootPathDisplay);
+    }
+
     private static OfficialMacAppInstall CreateInstall(string appPath)
     {
         var appBundle = new DirectoryInfo(appPath);
@@ -110,8 +132,15 @@ public sealed class MainWindowViewModelTests
 
         public MacSettings? SavedSettings { get; private set; }
 
+        public Exception? LoadException { get; set; }
+
         public Task<MacSettings> LoadAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(this.settings);
+        {
+            if (this.LoadException is not null)
+                throw this.LoadException;
+
+            return Task.FromResult(this.settings);
+        }
 
         public Task SaveAsync(MacSettings settings, CancellationToken cancellationToken = default)
         {

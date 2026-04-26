@@ -75,7 +75,32 @@ public sealed class MacLauncherServiceTests
         Assert.AreEqual(1, client.LaunchCalls);
     }
 
-    private static MacLaunchRequest CreateRequest()
+    [TestMethod]
+    public async Task LaunchAsyncRejectsSteamBeforeLogin()
+    {
+        var client = new FakeXivLauncherClient();
+        var service = new MacLauncherService(new FakeXivLauncherClientFactory(client));
+
+        var result = await service.LaunchAsync(CreateRequest(isSteam: true));
+
+        Assert.AreEqual(MacLaunchResultKind.Failed, result.Kind);
+        StringAssert.Contains(result.Message, "Steam login is not supported");
+        Assert.AreEqual(0, client.LoginCalls);
+        Assert.AreEqual(0, client.LaunchCalls);
+    }
+
+    [TestMethod]
+    public async Task XivLauncherClientDisablesUidCacheForLogin()
+    {
+        var launcher = new FakeLauncherCore();
+        var client = new XivLauncherClient(launcher);
+
+        await client.LoginAsync(CreateRequest());
+
+        Assert.IsFalse(launcher.LastUseCache);
+    }
+
+    private static MacLaunchRequest CreateRequest(bool isSteam = false)
     {
         var install = new OfficialMacAppInstall(
             new DirectoryInfo("/Applications/FINAL FANTASY XIV ONLINE.app"),
@@ -89,7 +114,7 @@ public sealed class MacLauncherServiceTests
             "password",
             string.Empty,
             ClientLanguage.English,
-            IsSteam: false,
+            IsSteam: isSteam,
             IsFreeTrial: false);
     }
 
@@ -153,5 +178,44 @@ public sealed class MacLauncherServiceTests
             this.LaunchCalls++;
             return true;
         }
+    }
+
+    private sealed class FakeLauncherCore : IXivLauncherCore
+    {
+        public bool? LastUseCache { get; private set; }
+
+        public Task<PatchListEntry[]> CheckBootVersionAsync(DirectoryInfo gamePath)
+            => Task.FromResult(Array.Empty<PatchListEntry>());
+
+        public Task<Launcher.LoginResult> LoginAsync(
+            string username,
+            string password,
+            string otp,
+            bool isSteam,
+            bool useCache,
+            DirectoryInfo gamePath,
+            bool forceBaseVersion,
+            bool isFreeTrial,
+            ClientLanguage language)
+        {
+            this.LastUseCache = useCache;
+
+            return Task.FromResult(new Launcher.LoginResult
+            {
+                State = Launcher.LoginState.Ok,
+                UniqueId = "session-id",
+                OauthLogin = new Launcher.OauthLoginResult
+                {
+                    Region = 3,
+                    MaxExpansion = 5,
+                    Playable = true,
+                    TermsAccepted = true,
+                    SessionId = "oauth-session",
+                },
+            });
+        }
+
+        public bool LaunchGame(Launcher.LoginResult loginResult, MacLaunchRequest request)
+            => true;
     }
 }

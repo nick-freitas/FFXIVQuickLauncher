@@ -63,14 +63,26 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public string? ResolvedAppPath
     {
         get => this.resolvedAppPath;
-        private set => this.SetProperty(ref this.resolvedAppPath, value);
+        private set
+        {
+            if (this.SetProperty(ref this.resolvedAppPath, value))
+                this.OnPropertyChanged(nameof(this.ResolvedAppPathDisplay));
+        }
     }
 
     public string? GameRootPath
     {
         get => this.gameRootPath;
-        private set => this.SetProperty(ref this.gameRootPath, value);
+        private set
+        {
+            if (this.SetProperty(ref this.gameRootPath, value))
+                this.OnPropertyChanged(nameof(this.GameRootPathDisplay));
+        }
     }
+
+    public string ResolvedAppPathDisplay => string.IsNullOrWhiteSpace(this.ResolvedAppPath) ? "Not resolved" : this.ResolvedAppPath;
+
+    public string GameRootPathDisplay => string.IsNullOrWhiteSpace(this.GameRootPath) ? "Not resolved" : this.GameRootPath;
 
     public string InstallStatus
     {
@@ -151,13 +163,26 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        var settings = await this.settingsService.LoadAsync(cancellationToken);
-        this.OfficialAppPathOverride = settings.OfficialAppPathOverride;
-        this.Username = settings.LastUsername ?? string.Empty;
-        this.SelectedLanguage = settings.ClientLanguage;
-        this.IsFreeTrial = settings.IsFreeTrial;
-        this.IsSteam = settings.IsSteam;
-        this.ResolveInstall();
+        try
+        {
+            var settings = await this.settingsService.LoadAsync(cancellationToken);
+            this.OfficialAppPathOverride = settings.OfficialAppPathOverride;
+            this.Username = settings.LastUsername ?? string.Empty;
+            this.SelectedLanguage = settings.ClientLanguage;
+            this.IsFreeTrial = settings.IsFreeTrial;
+            this.IsSteam = settings.IsSteam;
+            this.ResolveInstall();
+        }
+        catch (Exception ex)
+        {
+            this.install = null;
+            this.ResolvedAppPath = null;
+            this.GameRootPath = null;
+            this.InstallStatus = "Could not load Mac settings.";
+            this.StatusMessage = $"Could not load Mac settings: {ex.Message}";
+            this.OnPropertyChanged(nameof(this.IsInstallDetected));
+            this.RaiseCanLaunchChanged();
+        }
     }
 
     public async Task LaunchAsync()

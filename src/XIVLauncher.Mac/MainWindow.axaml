@@ -74,7 +74,7 @@
                            Text="App bundle" />
                 <TextBlock Grid.Row="1"
                            Grid.Column="1"
-                           Text="{Binding ResolvedAppPath, FallbackValue='Not resolved'}"
+                           Text="{Binding ResolvedAppPathDisplay}"
                            FontSize="12"
                            Foreground="#303431"
                            TextWrapping="Wrap" />
@@ -84,7 +84,7 @@
                            Text="Game root" />
                 <TextBlock Grid.Row="2"
                            Grid.Column="1"
-                           Text="{Binding GameRootPath, FallbackValue='Not resolved'}"
+                           Text="{Binding GameRootPathDisplay}"
                            FontSize="12"
                            Foreground="#303431"
                            TextWrapping="Wrap" />
