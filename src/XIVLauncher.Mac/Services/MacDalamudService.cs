@@ -28,6 +28,25 @@ public interface IMacDalamudUpdaterFactory
     DalamudUpdater Create(MacDalamudPaths paths);
 }
 
+public interface IMacDalamudLauncherAdapter
+{
+    void RunUpdater(string? betaKind, string? betaKey);
+
+    DalamudLauncher.DalamudInstallState HoldForUpdate(DirectoryInfo gamePath);
+
+    IGameRunner CreateGameRunner();
+}
+
+public interface IMacDalamudLauncherAdapterFactory
+{
+    IMacDalamudLauncherAdapter Create(
+        OfficialMacAppInstall install,
+        IMacDalamudUpdaterFactory updaterFactory,
+        DirectoryInfo gamePath,
+        MacDalamudPaths paths,
+        ClientLanguage language);
+}
+
 public sealed class MacDalamudUpdaterFactory : IMacDalamudUpdaterFactory
 {
     private readonly HttpClient httpClient;
@@ -50,30 +69,88 @@ public sealed class MacDalamudUpdaterFactory : IMacDalamudUpdaterFactory
         };
 }
 
+public sealed class MacDalamudLauncherAdapterFactory : IMacDalamudLauncherAdapterFactory
+{
+    public IMacDalamudLauncherAdapter Create(
+        OfficialMacAppInstall install,
+        IMacDalamudUpdaterFactory updaterFactory,
+        DirectoryInfo gamePath,
+        MacDalamudPaths paths,
+        ClientLanguage language)
+    {
+        var updater = updaterFactory.Create(paths);
+        var launcher = new DalamudLauncher(
+            new OfficialMacAppDalamudRunner(install),
+            updater,
+            DalamudLoadMethod.DllInject,
+            gamePath,
+            paths.ConfigDirectory,
+            paths.LogDirectory,
+            language,
+            injectionDelay: 0,
+            fakeLogin: false,
+            noPlugin: false,
+            noThirdPlugin: false,
+            troubleshootingData: "{}");
+
+        return new MacDalamudLauncherAdapter(updater, launcher);
+    }
+}
+
+public sealed class MacDalamudLauncherAdapter : IMacDalamudLauncherAdapter
+{
+    private readonly DalamudUpdater updater;
+    private readonly DalamudLauncher launcher;
+
+    public MacDalamudLauncherAdapter(DalamudUpdater updater, DalamudLauncher launcher)
+    {
+        this.updater = updater;
+        this.launcher = launcher;
+    }
+
+    public void RunUpdater(string? betaKind, string? betaKey)
+        => this.updater.Run(betaKind, betaKey);
+
+    public DalamudLauncher.DalamudInstallState HoldForUpdate(DirectoryInfo gamePath)
+        => this.launcher.HoldForUpdate(gamePath);
+
+    public IGameRunner CreateGameRunner()
+        => new OfficialMacDalamudGameRunner(this.launcher);
+}
+
 public sealed class MacDalamudService : IMacDalamudService
 {
     private readonly IMacDalamudUpdaterFactory updaterFactory;
+    private readonly IMacDalamudLauncherAdapterFactory launcherAdapterFactory;
     private readonly string applicationSupportDirectory;
 
     public MacDalamudService()
         : this(
             new MacDalamudUpdaterFactory(new HttpClient()),
+            new MacDalamudLauncherAdapterFactory(),
             MacSettingsService.DefaultApplicationSupportDirectory)
     {
     }
 
     public MacDalamudService(IMacDalamudUpdaterFactory updaterFactory)
-        : this(updaterFactory, MacSettingsService.DefaultApplicationSupportDirectory)
+        : this(
+            updaterFactory,
+            new MacDalamudLauncherAdapterFactory(),
+            MacSettingsService.DefaultApplicationSupportDirectory)
     {
     }
 
-    public MacDalamudService(IMacDalamudUpdaterFactory updaterFactory, string applicationSupportDirectory)
+    public MacDalamudService(
+        IMacDalamudUpdaterFactory updaterFactory,
+        IMacDalamudLauncherAdapterFactory launcherAdapterFactory,
+        string applicationSupportDirectory)
     {
         this.updaterFactory = updaterFactory;
+        this.launcherAdapterFactory = launcherAdapterFactory;
         this.applicationSupportDirectory = applicationSupportDirectory;
     }
 
-    public Task<MacDalamudPrepareResult> PrepareAsync(
+    public async Task<MacDalamudPrepareResult> PrepareAsync(
         OfficialMacAppInstall install,
         DirectoryInfo gamePath,
         ClientLanguage language,
@@ -81,40 +158,47 @@ public sealed class MacDalamudService : IMacDalamudService
     {
         try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var paths = MacDalamudPaths.Create(this.applicationSupportDirectory);
-            Directory.CreateDirectory(paths.ConfigDirectory.FullName);
-            Directory.CreateDirectory(paths.PluginDirectory.FullName);
-            Directory.CreateDirectory(paths.LogDirectory.FullName);
-
-            var updater = this.updaterFactory.Create(paths);
-            updater.Run(betaKind: null, betaKey: null);
-
-            var launcher = new DalamudLauncher(
-                new OfficialMacAppDalamudRunner(install),
-                updater,
-                DalamudLoadMethod.DllInject,
-                gamePath,
-                paths.ConfigDirectory,
-                paths.LogDirectory,
-                language,
-                injectionDelay: 0,
-                fakeLogin: false,
-                noPlugin: false,
-                noThirdPlugin: false,
-                troubleshootingData: "{}");
-
-            var state = launcher.HoldForUpdate(gamePath);
-            if (state != DalamudLauncher.DalamudInstallState.Ok)
-                return Task.FromResult(MacDalamudPrepareResult.Failed("Dalamud is unavailable for the game version."));
-
-            return Task.FromResult(MacDalamudPrepareResult.Prepared(new OfficialMacDalamudGameRunner(launcher)));
+            return await Task.Run(
+                () => this.Prepare(install, gamePath, language, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
-            return Task.FromResult(MacDalamudPrepareResult.Failed($"Could not prepare Dalamud: {ex.Message}"));
+            return MacDalamudPrepareResult.Failed($"Could not prepare Dalamud: {ex.Message}");
         }
+    }
+
+    private MacDalamudPrepareResult Prepare(
+        OfficialMacAppInstall install,
+        DirectoryInfo gamePath,
+        ClientLanguage language,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var paths = MacDalamudPaths.Create(this.applicationSupportDirectory);
+        Directory.CreateDirectory(paths.ConfigDirectory.FullName);
+        Directory.CreateDirectory(paths.PluginDirectory.FullName);
+        Directory.CreateDirectory(paths.LogDirectory.FullName);
+
+        var launcherAdapter = this.launcherAdapterFactory.Create(
+            install,
+            this.updaterFactory,
+            gamePath,
+            paths,
+            language);
+
+        launcherAdapter.RunUpdater(betaKind: null, betaKey: null);
+
+        var state = launcherAdapter.HoldForUpdate(gamePath);
+        if (state != DalamudLauncher.DalamudInstallState.Ok)
+            return MacDalamudPrepareResult.Failed("Dalamud is unavailable for the game version.");
+
+        return MacDalamudPrepareResult.Prepared(launcherAdapter.CreateGameRunner());
     }
 }
 
