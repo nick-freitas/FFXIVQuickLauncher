@@ -19,10 +19,12 @@ using XIVLauncher.Common.Addon;
 using XIVLauncher.Common.Dalamud;
 using XIVLauncher.Common.Game;
 using XIVLauncher.Common.Game.Exceptions;
+using XIVLauncher.Common.Game.OfficialMacApp;
 using XIVLauncher.Common.Game.Patch;
 using XIVLauncher.Common.Game.Patch.Acquisition.Aria;
 using XIVLauncher.Common.Game.Patch.PatchList;
 using XIVLauncher.Common.PlatformAbstractions;
+using XIVLauncher.Common.Unix;
 using XIVLauncher.Common.Util;
 using XIVLauncher.Common.Windows;
 using XIVLauncher.Game;
@@ -1071,75 +1073,92 @@ namespace XIVLauncher.Windows.ViewModel
 
         public async Task<Process> StartGameAndAddon(Launcher.LoginResult loginResult, bool isSteam, bool forceNoDalamud, bool noThird, bool noPlugins)
         {
-            var dalamudLauncher = new DalamudLauncher(new WindowsDalamudRunner(App.DalamudUpdater.Runtime), App.DalamudUpdater, App.Settings.InGameAddonLoadMethod.GetValueOrDefault(DalamudLoadMethod.DllInject),
-                App.Settings.GamePath,
-                new DirectoryInfo(Paths.RoamingPath),
-                new DirectoryInfo(Paths.RoamingPath),
-                App.Settings.Language.GetValueOrDefault(ClientLanguage.English),
-                (int)App.Settings.DalamudInjectionDelayMs,
-                false,
-                noPlugins,
-                noThird,
-                Troubleshooting.GetTroubleshootingJson());
-
+            var gamePath = App.Settings.GamePath;
             var dalamudOk = false;
+            IGameRunner gameRunner;
 
-            var dalamudCompatCheck = new WindowsDalamudCompatibilityCheck();
-
-            try
+            if (PlatformHelpers.GetPlatform() == Platform.Mac)
             {
-                dalamudCompatCheck.EnsureCompatibility();
+                var macInstall = App.Settings.OfficialMacAppPath is { } officialMacAppPath
+                    ? OfficialMacAppLocator.TryResolve(officialMacAppPath) ?? OfficialMacAppLocator.TryResolveDefault()
+                    : OfficialMacAppLocator.TryResolveDefault();
+
+                if (macInstall == null)
+                    throw new InvalidOperationException("Could not find the official FINAL FANTASY XIV ONLINE.app install.");
+
+                gamePath = macInstall.GameRoot;
+                gameRunner = new OfficialMacAppGameRunner(macInstall);
             }
-            catch (IDalamudCompatibilityCheck.NoRedistsException ex)
+            else
             {
-                Log.Error(ex, "No Dalamud Redists found");
+                var dalamudLauncher = new DalamudLauncher(new WindowsDalamudRunner(App.DalamudUpdater.Runtime), App.DalamudUpdater, App.Settings.InGameAddonLoadMethod.GetValueOrDefault(DalamudLoadMethod.DllInject),
+                    App.Settings.GamePath,
+                    new DirectoryInfo(Paths.RoamingPath),
+                    new DirectoryInfo(Paths.RoamingPath),
+                    App.Settings.Language.GetValueOrDefault(ClientLanguage.English),
+                    (int)App.Settings.DalamudInjectionDelayMs,
+                    false,
+                    noPlugins,
+                    noThird,
+                    Troubleshooting.GetTroubleshootingJson());
 
-                CustomMessageBox.Show(
-                    Loc.Localize("DalamudVc2019RedistError",
-                        "The XIVLauncher in-game addon needs the Microsoft Visual C++ 2015-2019 redistributable to be installed to continue. Please install it from the Microsoft homepage."),
-                    "XIVLauncher", MessageBoxButton.OK, MessageBoxImage.Exclamation, parentWindow: _window);
-            }
-            catch (IDalamudCompatibilityCheck.ArchitectureNotSupportedException ex)
-            {
-                Log.Error(ex, "Architecture not supported");
+                var dalamudCompatCheck = new WindowsDalamudCompatibilityCheck();
 
-                CustomMessageBox.Show(
-                    Loc.Localize("DalamudArchError",
-                        "Dalamud cannot run your computer's architecture. Please make sure that you are running a 64-bit version of Windows.\nIf you are using Windows on ARM, please make sure that x64-Emulation is enabled for XIVLauncher."),
-                    "XIVLauncher", MessageBoxButton.OK, MessageBoxImage.Exclamation, parentWindow: _window);
-            }
-
-            if (App.Settings.InGameAddonEnabled && !forceNoDalamud)
-            {
                 try
                 {
-                    var dalamudStatus = dalamudLauncher.HoldForUpdate(App.Settings.GamePath);
-                    dalamudOk = dalamudStatus == DalamudLauncher.DalamudInstallState.Ok;
+                    dalamudCompatCheck.EnsureCompatibility();
                 }
-                catch (Exception ex)
+                catch (IDalamudCompatibilityCheck.NoRedistsException ex)
                 {
-                    Log.Error(ex, "Couldn't DalamudLauncher::HoldForUpdate()");
+                    Log.Error(ex, "No Dalamud Redists found");
 
-                    var errorNews = await Updates.GetErrorNews().ConfigureAwait(false);
+                    CustomMessageBox.Show(
+                        Loc.Localize("DalamudVc2019RedistError",
+                            "The XIVLauncher in-game addon needs the Microsoft Visual C++ 2015-2019 redistributable to be installed to continue. Please install it from the Microsoft homepage."),
+                        "XIVLauncher", MessageBoxButton.OK, MessageBoxImage.Exclamation, parentWindow: _window);
+                }
+                catch (IDalamudCompatibilityCheck.ArchitectureNotSupportedException ex)
+                {
+                    Log.Error(ex, "Architecture not supported");
 
-                    // If we have valid error news, let's not show this because it probably doesn't matter
-                    if (errorNews == null)
+                    CustomMessageBox.Show(
+                        Loc.Localize("DalamudArchError",
+                            "Dalamud cannot run your computer's architecture. Please make sure that you are running a 64-bit version of Windows.\nIf you are using Windows on ARM, please make sure that x64-Emulation is enabled for XIVLauncher."),
+                        "XIVLauncher", MessageBoxButton.OK, MessageBoxImage.Exclamation, parentWindow: _window);
+                }
+
+                if (App.Settings.InGameAddonEnabled && !forceNoDalamud)
+                {
+                    try
                     {
-                        var ensurementErrorMessage = Loc.Localize("DalamudEnsurementError",
-                            "Could not download necessary data files to use Dalamud and plugins.\nThis could be a problem with your internet connection, or might be caused by your antivirus application blocking necessary files. The game will start, but you will not be able to use plugins.\n\nPlease check our FAQ for more information.");
+                        var dalamudStatus = dalamudLauncher.HoldForUpdate(App.Settings.GamePath);
+                        dalamudOk = dalamudStatus == DalamudLauncher.DalamudInstallState.Ok;
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(ex, "Couldn't DalamudLauncher::HoldForUpdate()");
 
-                        CustomMessageBox.Builder
-                                        .NewFrom(ensurementErrorMessage)
-                                        .WithImage(MessageBoxImage.Warning)
-                                        .WithButtons(MessageBoxButton.OK)
-                                        .WithShowHelpLinks()
-                                        .WithParentWindow(_window)
-                                        .Show();
+                        var errorNews = await Updates.GetErrorNews().ConfigureAwait(false);
+
+                        // If we have valid error news, let's not show this because it probably doesn't matter
+                        if (errorNews == null)
+                        {
+                            var ensurementErrorMessage = Loc.Localize("DalamudEnsurementError",
+                                "Could not download necessary data files to use Dalamud and plugins.\nThis could be a problem with your internet connection, or might be caused by your antivirus application blocking necessary files. The game will start, but you will not be able to use plugins.\n\nPlease check our FAQ for more information.");
+
+                            CustomMessageBox.Builder
+                                            .NewFrom(ensurementErrorMessage)
+                                            .WithImage(MessageBoxImage.Warning)
+                                            .WithButtons(MessageBoxButton.OK)
+                                            .WithShowHelpLinks()
+                                            .WithParentWindow(_window)
+                                            .Show();
+                        }
                     }
                 }
-            }
 
-            var gameRunner = new WindowsGameRunner(dalamudLauncher, dalamudOk);
+                gameRunner = new WindowsGameRunner(dalamudLauncher, dalamudOk);
+            }
 
             // We won't do any sanity checks here anymore, since that should be handled in StartLogin
             var launched = this.Launcher.LaunchGame(gameRunner,
@@ -1148,7 +1167,7 @@ namespace XIVLauncher.Windows.ViewModel
                 loginResult.OauthLogin.MaxExpansion,
                 isSteam,
                 App.Settings.AdditionalLaunchArgs,
-                App.Settings.GamePath,
+                gamePath,
                 App.Settings.Language.GetValueOrDefault(ClientLanguage.English),
                 App.Settings.EncryptArguments.GetValueOrDefault(false),
                 App.Settings.DpiAwareness.GetValueOrDefault(DpiAwareness.Unaware));

@@ -8,6 +8,7 @@ using System.Windows;
 using CheapLoc;
 using Microsoft.Win32;
 using XIVLauncher.Common;
+using XIVLauncher.Common.Game.OfficialMacApp;
 using XIVLauncher.Common.Game.Patch;
 using XIVLauncher.Common.Util;
 using XIVLauncher.Common.Windows;
@@ -105,6 +106,16 @@ namespace XIVLauncher
 
             try
             {
+                if (PlatformHelpers.GetPlatform() == Platform.Mac)
+                {
+                    var macInstall = App.Settings.OfficialMacAppPath is { } officialMacAppPath
+                        ? OfficialMacAppLocator.TryResolve(officialMacAppPath) ?? OfficialMacAppLocator.TryResolveDefault()
+                        : OfficialMacAppLocator.TryResolveDefault();
+
+                    if (macInstall != null)
+                        return macInstall.GameRoot.FullName;
+                }
+
                 var foundVersions = new Dictionary<string, SeVersion>();
 
                 foreach (var path in GetCommonPaths(CN_1, CN_2, GN, RN))
