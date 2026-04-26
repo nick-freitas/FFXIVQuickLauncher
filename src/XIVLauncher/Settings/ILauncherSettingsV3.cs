@@ -12,7 +12,6 @@ namespace XIVLauncher.Settings
         #region Launcher Setting
 
         DirectoryInfo GamePath { get; set; }
-        DirectoryInfo? OfficialMacAppPath { get; set; }
         bool AutologinEnabled { get; set; }
         List<AddonEntry> AddonList { get; set; }
         bool UniqueIdCacheEnabled { get; set; }
