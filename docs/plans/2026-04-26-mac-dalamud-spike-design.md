@@ -105,3 +105,14 @@ Manual verification is required for the real spike:
 - The downloaded Windows .NET runtime may need additional environment variables under the official app Wine runtime.
 - Wine PID to macOS PID mapping may require additional CrossOver-specific handling.
 - Some Dalamud plugins may still fail even if core Dalamud loads.
+
+## Spike Notes
+
+2026-04-26:
+
+- `dotnet test src/XIVLauncher.Mac.Tests/XIVLauncher.Mac.Tests.csproj /p:LangVersion=preview` passed with 36 tests.
+- `dotnet build src/XIVLauncher.Mac/XIVLauncher.Mac.csproj /p:LangVersion=preview` passed.
+- The normal Mac launcher path started from `dotnet run` without console errors and was stopped after startup.
+- The `--experimental-dalamud` launcher path started from `dotnet run` without console errors and was stopped after startup.
+- Startup-only verification did not create `addon` or `runtime` artifacts under `~/Library/Application Support/XIVLauncherMac`; the Dalamud preparation path is expected to run only after an authenticated game launch is initiated from the UI.
+- End-to-end confirmation that Dalamud downloads, injects, and opens in game still requires an interactive login and game launch.
