@@ -22,17 +22,20 @@ public sealed class MainWindowViewModelTests
             IsSteam = true,
         };
         var settingsService = new FakeSettingsService(settings);
+        var credentials = new FakeCredentialStore { Password = "saved-password" };
         var resolver = new FakeInstallResolver(MacInstallResolution.Found(install));
-        var viewModel = new MainWindowViewModel(settingsService, resolver, new FakeLauncherService());
+        var viewModel = new MainWindowViewModel(settingsService, credentials, resolver, new FakeLauncherService());
 
         await viewModel.InitializeAsync();
 
+        Assert.AreEqual("saved-user", credentials.LastPasswordLookupUsername);
         Assert.AreEqual(settings.OfficialAppPathOverride, resolver.LastOverridePath);
         Assert.IsTrue(viewModel.IsInstallDetected);
         Assert.AreEqual(install.AppBundle.FullName, viewModel.ResolvedAppPath);
         Assert.AreEqual(install.GameRoot.FullName, viewModel.GameRootPath);
         Assert.AreEqual(install.GameRoot.FullName, viewModel.GameRootPathDisplay);
         Assert.AreEqual("saved-user", viewModel.Username);
+        Assert.AreEqual("saved-password", viewModel.Password);
         Assert.AreEqual(ClientLanguage.German, viewModel.SelectedLanguage);
         Assert.IsTrue(viewModel.IsFreeTrial);
         Assert.IsTrue(viewModel.IsSteam);
@@ -90,6 +93,95 @@ public sealed class MainWindowViewModelTests
         Assert.AreEqual("/Applications/Override.app", settingsService.SavedSettings.OfficialAppPathOverride);
         Assert.IsTrue(settingsService.SavedSettings.IsFreeTrial);
         Assert.IsTrue(settingsService.SavedSettings.IsSteam);
+    }
+
+    [TestMethod]
+    public async Task LaunchAsyncSavesPasswordToCredentialStoreWhenLaunchStarts()
+    {
+        var install = CreateInstall("/Applications/FINAL FANTASY XIV ONLINE.app");
+        var credentials = new FakeCredentialStore();
+        var launcher = new FakeLauncherService { Result = MacLaunchResult.Launched() };
+        var viewModel = new MainWindowViewModel(
+            new FakeSettingsService(new MacSettings()),
+            credentials,
+            new FakeInstallResolver(MacInstallResolution.Found(install)),
+            launcher);
+
+        await viewModel.InitializeAsync();
+        viewModel.Username = " saved-user ";
+        viewModel.Password = "save-me";
+
+        await viewModel.LaunchAsync();
+
+        Assert.AreEqual("saved-user", credentials.SavedUsername);
+        Assert.AreEqual("save-me", credentials.SavedPassword);
+    }
+
+    [TestMethod]
+    public async Task LaunchAsyncSavesPasswordToCredentialStoreEvenWhenLaunchFails()
+    {
+        var install = CreateInstall("/Applications/FINAL FANTASY XIV ONLINE.app");
+        var credentials = new FakeCredentialStore();
+        var launcher = new FakeLauncherService { Result = MacLaunchResult.Failed("login failed") };
+        var viewModel = new MainWindowViewModel(
+            new FakeSettingsService(new MacSettings()),
+            credentials,
+            new FakeInstallResolver(MacInstallResolution.Found(install)),
+            launcher);
+
+        await viewModel.InitializeAsync();
+        viewModel.Username = "saved-user";
+        viewModel.Password = "do-not-save";
+
+        await viewModel.LaunchAsync();
+
+        Assert.AreEqual("saved-user", credentials.SavedUsername);
+        Assert.AreEqual("do-not-save", credentials.SavedPassword);
+    }
+
+    [TestMethod]
+    public async Task CopyStatusCommandCopiesCurrentStatusMessage()
+    {
+        var clipboard = new FakeClipboardService();
+        var viewModel = new MainWindowViewModel(
+            new FakeSettingsService(new MacSettings()),
+            new FakeCredentialStore(),
+            new FakeInstallResolver(MacInstallResolution.NotFound("/Applications/FINAL FANTASY XIV ONLINE.app", "not resolved")),
+            new FakeLauncherService(),
+            clipboard);
+
+        await viewModel.InitializeAsync();
+        await viewModel.CopyStatusCommand.ExecuteAsync();
+
+        Assert.AreEqual(viewModel.StatusMessage, clipboard.Text);
+    }
+
+    [TestMethod]
+    public async Task LaunchAsyncDisablesLaunchAndIgnoresSecondLaunchWhileInProgress()
+    {
+        var install = CreateInstall("/Applications/FINAL FANTASY XIV ONLINE.app");
+        var launcher = new FakeLauncherService { DelayCompletion = true };
+        var viewModel = new MainWindowViewModel(
+            new FakeSettingsService(new MacSettings()),
+            new FakeInstallResolver(MacInstallResolution.Found(install)),
+            launcher);
+
+        await viewModel.InitializeAsync();
+        viewModel.Username = "saved-user";
+        viewModel.Password = "password";
+
+        var launchTask = viewModel.LaunchAsync();
+        await launcher.WaitUntilStartedAsync();
+
+        Assert.IsTrue(viewModel.IsBusy);
+        Assert.IsFalse(viewModel.CanLaunch);
+        Assert.IsFalse(viewModel.LaunchCommand.CanExecute(null));
+
+        await viewModel.LaunchAsync();
+
+        Assert.AreEqual(1, launcher.Requests.Count);
+        launcher.CompleteDelayedLaunch();
+        await launchTask;
     }
 
     [TestMethod]
@@ -177,6 +269,41 @@ public sealed class MainWindowViewModelTests
         }
     }
 
+    private sealed class FakeCredentialStore : IMacCredentialStore
+    {
+        public string? Password { get; set; }
+
+        public string? LastPasswordLookupUsername { get; private set; }
+
+        public string? SavedUsername { get; private set; }
+
+        public string? SavedPassword { get; private set; }
+
+        public Task<string?> GetPasswordAsync(string username, CancellationToken cancellationToken = default)
+        {
+            this.LastPasswordLookupUsername = username;
+            return Task.FromResult(this.Password);
+        }
+
+        public Task SavePasswordAsync(string username, string password, CancellationToken cancellationToken = default)
+        {
+            this.SavedUsername = username;
+            this.SavedPassword = password;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeClipboardService : IClipboardService
+    {
+        public string? Text { get; private set; }
+
+        public Task SetTextAsync(string text, CancellationToken cancellationToken = default)
+        {
+            this.Text = text;
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class FakeInstallResolver : IMacInstallResolver
     {
         private readonly Func<string?, MacInstallResolution> resolve;
@@ -208,6 +335,12 @@ public sealed class MainWindowViewModelTests
 
         public IProgress<MacLaunchProgress>? LastProgress { get; private set; }
 
+        public bool DelayCompletion { get; set; }
+
+        private readonly TaskCompletionSource started = new();
+
+        private readonly TaskCompletionSource complete = new();
+
         public Task<MacLaunchResult> LaunchAsync(
             MacLaunchRequest request,
             IProgress<MacLaunchProgress>? progress = null,
@@ -215,7 +348,22 @@ public sealed class MainWindowViewModelTests
         {
             this.Requests.Add(request);
             this.LastProgress = progress;
-            return Task.FromResult(this.Result);
+            progress?.Report(new MacLaunchProgress(MacLaunchStage.Patching, "Boot patching: Downloading 50%", 50, TimeSpan.FromSeconds(10)));
+            this.started.TrySetResult();
+
+            return this.DelayCompletion ? this.WaitForCompletionAsync() : Task.FromResult(this.Result);
+        }
+
+        public Task WaitUntilStartedAsync()
+            => this.started.Task;
+
+        public void CompleteDelayedLaunch()
+            => this.complete.TrySetResult();
+
+        private async Task<MacLaunchResult> WaitForCompletionAsync()
+        {
+            await this.complete.Task;
+            return this.Result;
         }
     }
 }

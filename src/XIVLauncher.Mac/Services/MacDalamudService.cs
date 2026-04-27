@@ -80,7 +80,7 @@ public sealed class MacDalamudLauncherAdapterFactory : IMacDalamudLauncherAdapte
     {
         var updater = updaterFactory.Create(paths);
         var launcher = new DalamudLauncher(
-            new OfficialMacAppDalamudRunner(install),
+            new OfficialMacAppDalamudRunner(install, paths.RuntimeDirectory),
             updater,
             DalamudLoadMethod.DllInject,
             gamePath,

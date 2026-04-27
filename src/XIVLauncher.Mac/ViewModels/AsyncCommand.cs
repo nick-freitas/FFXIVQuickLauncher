@@ -20,7 +20,10 @@ public sealed class AsyncCommand : ICommand
     public bool CanExecute(object? parameter) => this.canExecute?.Invoke() ?? true;
 
     public async void Execute(object? parameter)
-        => await this.execute();
+        => await this.ExecuteAsync();
+
+    public Task ExecuteAsync()
+        => this.execute();
 
     public void RaiseCanExecuteChanged()
         => this.CanExecuteChanged?.Invoke(this, EventArgs.Empty);

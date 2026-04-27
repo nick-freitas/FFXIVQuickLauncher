@@ -15,10 +15,17 @@ namespace XIVLauncher.Common.Unix;
 public sealed class OfficialMacAppDalamudRunner : IDalamudRunner
 {
     private readonly OfficialMacAppInstall install;
+    private readonly DirectoryInfo? dotnetRuntime;
 
     public OfficialMacAppDalamudRunner(OfficialMacAppInstall install)
+        : this(install, dotnetRuntime: null)
+    {
+    }
+
+    public OfficialMacAppDalamudRunner(OfficialMacAppInstall install, DirectoryInfo? dotnetRuntime)
     {
         this.install = install;
+        this.dotnetRuntime = dotnetRuntime;
     }
 
     public Process? Run(
@@ -42,7 +49,8 @@ public sealed class OfficialMacAppDalamudRunner : IDalamudRunner
             gameArgs,
             environment,
             loadMethod,
-            dalamudStartInfo);
+            dalamudStartInfo,
+            this.dotnetRuntime);
 
         var startInfo = new ProcessStartInfo(plan.FileName)
         {
@@ -96,7 +104,8 @@ public sealed class OfficialMacAppDalamudRunner : IDalamudRunner
         string gameArgs,
         IDictionary<string, string> environment,
         DalamudLoadMethod loadMethod,
-        DalamudStartInfo startInfo)
+        DalamudStartInfo startInfo,
+        DirectoryInfo? dotnetRuntime = null)
     {
         var pathConverter = new OfficialMacWinePathConverter(install.WinePrefix);
         var launchEnvironment = new Dictionary<string, string>(environment)
@@ -104,11 +113,16 @@ public sealed class OfficialMacAppDalamudRunner : IDalamudRunner
             ["WINEPREFIX"] = install.WinePrefix.FullName,
         };
 
-        if (environment.TryGetValue("DALAMUD_RUNTIME", out var dalamudRuntime))
+        var dalamudRuntime = environment.TryGetValue("DALAMUD_RUNTIME", out var environmentRuntime)
+            ? environmentRuntime
+            : dotnetRuntime?.FullName;
+
+        if (!string.IsNullOrWhiteSpace(dalamudRuntime))
         {
             var wineRuntime = pathConverter.ToWinePath(dalamudRuntime);
             launchEnvironment["DALAMUD_RUNTIME"] = wineRuntime;
             launchEnvironment["DOTNET_ROOT"] = wineRuntime;
+            launchEnvironment["DOTNET_MULTILEVEL_LOOKUP"] = "0";
         }
 
         var runnerPath = pathConverter.ToWinePath(runner.FullName);

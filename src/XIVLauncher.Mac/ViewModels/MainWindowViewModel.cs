@@ -15,8 +15,10 @@ namespace XIVLauncher.Mac.ViewModels;
 public sealed class MainWindowViewModel : INotifyPropertyChanged
 {
     private readonly IMacSettingsService settingsService;
+    private readonly IMacCredentialStore credentialStore;
     private readonly IMacInstallResolver installResolver;
     private readonly IMacLauncherService launcherService;
+    private readonly IClipboardService clipboardService;
     private OfficialMacAppInstall? install;
     private string? officialAppPathOverride;
     private string? resolvedAppPath;
@@ -30,13 +32,34 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool isFreeTrial;
     private bool isSteam;
     private bool isBusy;
+    private bool isProgressVisible;
+    private bool isProgressIndeterminate = true;
+    private double progressValue;
 
     public MainWindowViewModel(IMacSettingsService settingsService, IMacInstallResolver installResolver, IMacLauncherService launcherService)
+        : this(settingsService, new NullMacCredentialStore(), installResolver, launcherService, new NullClipboardService())
+    {
+    }
+
+    public MainWindowViewModel(IMacSettingsService settingsService, IMacCredentialStore credentialStore, IMacInstallResolver installResolver, IMacLauncherService launcherService)
+        : this(settingsService, credentialStore, installResolver, launcherService, new NullClipboardService())
+    {
+    }
+
+    public MainWindowViewModel(
+        IMacSettingsService settingsService,
+        IMacCredentialStore credentialStore,
+        IMacInstallResolver installResolver,
+        IMacLauncherService launcherService,
+        IClipboardService clipboardService)
     {
         this.settingsService = settingsService;
+        this.credentialStore = credentialStore;
         this.installResolver = installResolver;
         this.launcherService = launcherService;
+        this.clipboardService = clipboardService;
         this.LaunchCommand = new AsyncCommand(this.LaunchAsync, () => this.CanLaunch);
+        this.CopyStatusCommand = new AsyncCommand(this.CopyStatusAsync, () => this.CanCopyStatus);
         this.RefreshInstallCommand = new AsyncCommand(this.ResolveAndSaveInstallAsync, () => !this.IsBusy);
     }
 
@@ -51,6 +74,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     ];
 
     public AsyncCommand LaunchCommand { get; }
+
+    public AsyncCommand CopyStatusCommand { get; }
 
     public ICommand RefreshInstallCommand { get; }
 
@@ -93,7 +118,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public string StatusMessage
     {
         get => this.statusMessage;
-        private set => this.SetProperty(ref this.statusMessage, value);
+        private set
+        {
+            if (this.SetProperty(ref this.statusMessage, value))
+                this.RaiseCanCopyStatusChanged();
+        }
     }
 
     public string Username
@@ -102,7 +131,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         set
         {
             if (this.SetProperty(ref this.username, value))
+            {
+                this.Password = string.Empty;
                 this.RaiseCanLaunchChanged();
+            }
         }
     }
 
@@ -153,6 +185,24 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool IsProgressVisible
+    {
+        get => this.isProgressVisible;
+        private set => this.SetProperty(ref this.isProgressVisible, value);
+    }
+
+    public bool IsProgressIndeterminate
+    {
+        get => this.isProgressIndeterminate;
+        private set => this.SetProperty(ref this.isProgressIndeterminate, value);
+    }
+
+    public double ProgressValue
+    {
+        get => this.progressValue;
+        private set => this.SetProperty(ref this.progressValue, value);
+    }
+
     public bool IsInstallDetected => this.install is not null;
 
     public bool CanLaunch
@@ -161,6 +211,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
            !string.IsNullOrWhiteSpace(this.Username) &&
            !string.IsNullOrWhiteSpace(this.Password);
 
+    public bool CanCopyStatus
+        => !string.IsNullOrWhiteSpace(this.StatusMessage);
+
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         try
@@ -168,6 +221,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             var settings = await this.settingsService.LoadAsync(cancellationToken);
             this.OfficialAppPathOverride = settings.OfficialAppPathOverride;
             this.Username = settings.LastUsername ?? string.Empty;
+            this.Password = await this.LoadSavedPasswordAsync(this.Username, cancellationToken);
             this.SelectedLanguage = settings.ClientLanguage;
             this.IsFreeTrial = settings.IsFreeTrial;
             this.IsSteam = settings.IsSteam;
@@ -198,6 +252,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             return;
 
         this.IsBusy = true;
+        this.IsProgressVisible = true;
+        this.IsProgressIndeterminate = true;
+        this.ProgressValue = 0;
         this.StatusMessage = "Logging in and checking patches...";
 
         try
@@ -210,10 +267,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 this.Otp.Trim(),
                 this.SelectedLanguage,
                 this.IsSteam,
-            this.IsFreeTrial);
+                this.IsFreeTrial);
+            await this.SavePasswordAsync(request.Username, request.Password);
+
             var result = await this.launcherService.LaunchAsync(
                 request,
-                new MacLaunchStatusProgress(this));
+                new Progress<MacLaunchProgress>(this.UpdateLaunchProgress));
 
             this.StatusMessage = result.Message;
         }
@@ -224,6 +283,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         finally
         {
             this.IsBusy = false;
+            this.IsProgressVisible = false;
         }
     }
 
@@ -232,6 +292,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         this.ResolveInstall();
         await this.SaveSettingsAsync();
     }
+
+    private Task CopyStatusAsync()
+        => string.IsNullOrWhiteSpace(this.StatusMessage)
+            ? Task.CompletedTask
+            : this.clipboardService.SetTextAsync(this.StatusMessage);
 
     private void ResolveInstall()
     {
@@ -256,6 +321,48 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             IsSteam = this.IsSteam,
         });
 
+    private async Task<string> LoadSavedPasswordAsync(string username, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+            return string.Empty;
+
+        try
+        {
+            return await this.credentialStore.GetPasswordAsync(username.Trim(), cancellationToken) ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private async Task SavePasswordAsync(string username, string password)
+    {
+        try
+        {
+            await this.credentialStore.SavePasswordAsync(username, password);
+        }
+        catch
+        {
+            this.StatusMessage += " Password could not be saved to macOS Keychain.";
+        }
+    }
+
+    private void UpdateLaunchProgress(MacLaunchProgress progress)
+    {
+        this.StatusMessage = progress.Message;
+
+        if (progress.PercentComplete.HasValue)
+        {
+            this.IsProgressIndeterminate = false;
+            this.ProgressValue = Math.Clamp(progress.PercentComplete.Value, 0, 100);
+        }
+        else
+        {
+            this.IsProgressIndeterminate = true;
+        }
+    }
+
     private bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {
         if (EqualityComparer<T>.Default.Equals(field, value))
@@ -278,19 +385,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             command.RaiseCanExecuteChanged();
     }
 
+    private void RaiseCanCopyStatusChanged()
+    {
+        this.OnPropertyChanged(nameof(this.CanCopyStatus));
+        this.CopyStatusCommand.RaiseCanExecuteChanged();
+    }
+
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         => this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-
-    private sealed class MacLaunchStatusProgress : IProgress<MacLaunchProgress>
-    {
-        private readonly MainWindowViewModel viewModel;
-
-        public MacLaunchStatusProgress(MainWindowViewModel viewModel)
-        {
-            this.viewModel = viewModel;
-        }
-
-        public void Report(MacLaunchProgress value)
-            => this.viewModel.StatusMessage = value.Message;
-    }
 }

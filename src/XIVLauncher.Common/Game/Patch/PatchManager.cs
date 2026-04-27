@@ -71,6 +71,8 @@ namespace XIVLauncher.Common.Game.Patch
 
         public bool IsCancelling { get; private set; }
 
+        public string CurrentPhase { get; private set; } = "Not started";
+
         public long AllDownloadsLength => GetDownloadLength();
 
         private bool hasError = false;
@@ -104,6 +106,7 @@ namespace XIVLauncher.Common.Game.Patch
 
         public async Task<bool> PatchAsync(bool external = true)
         {
+            this.CurrentPhase = "Checking disk space";
             if (!EnvironmentSettings.IsIgnoreSpaceRequirements)
             {
                 var freeSpaceDownload = PlatformHelpers.GetDiskFreeSpace(this.patchStore);
@@ -130,17 +133,22 @@ namespace XIVLauncher.Common.Game.Patch
                 }
             }
 
+            this.CurrentPhase = "Starting installer";
             this.installer.StartIfNeeded(external);
+            this.CurrentPhase = "Waiting for installer";
             this.installer.WaitOnHello();
 
+            this.CurrentPhase = "Starting downloader";
             await this.acquisition.StartIfNeededAsync(this.speedLimitBps);
 
+            this.CurrentPhase = "Scheduling downloads";
             await Task.WhenAll(new[]
             {
                 Task.Run(RunDownloadQueue, _cancelTokenSource.Token),
                 Task.Run(RunApplyQueue, _cancelTokenSource.Token),
             }).ConfigureAwait(false);
 
+            this.CurrentPhase = "Done";
             return !this.IsCancelling;
         }
 
@@ -158,6 +166,7 @@ namespace XIVLauncher.Common.Game.Patch
 
         private async Task DownloadPatchAsync(PatchDownload download, int index)
         {
+            this.CurrentPhase = "Downloading";
             var outFile = GetPatchFile(download.Patch);
 
             var realUrl = download.Patch.Url;
@@ -194,6 +203,7 @@ namespace XIVLauncher.Common.Game.Patch
                         return;
 
                     this.hasError = true;
+                    this.IsCancelling = true;
 
                     CancelAllDownloads();
                     OnFail?.Invoke(download.Patch, context);
@@ -216,28 +226,42 @@ namespace XIVLauncher.Common.Game.Patch
 
                 // Indicate "Checking..."
                 Slots[index] = SlotState.Checking;
+                var lockTaken = false;
 
-                var checkResult = CheckPatchValidity(download.Patch, outFile);
-
-                this.downloadFinalizationLock.WaitOne();
-
-                // Let's just bail for now, need better handling of this later
-                if (checkResult != HashCheckResult.Pass)
+                try
                 {
-                    Log.Error("CheckPatchValidity failed with {Result} for {VersionId} after DL", checkResult, download.Patch.VersionId);
-                    HandleError($"ValidityCheck ({checkResult})");
-                    return;
+                    var checkResult = CheckPatchValidity(download.Patch, outFile);
+
+                    this.downloadFinalizationLock.WaitOne();
+                    lockTaken = true;
+
+                    // Let's just bail for now, need better handling of this later
+                    if (checkResult != HashCheckResult.Pass)
+                    {
+                        Log.Error("CheckPatchValidity failed with {Result} for {VersionId} after DL", checkResult, download.Patch.VersionId);
+                        HandleError($"ValidityCheck ({checkResult})");
+                        return;
+                    }
+
+                    download.State = PatchState.Downloaded;
+                    Slots[index] = SlotState.Done;
+                    Progresses[index] = 0;
+                    Speeds[index] = 0;
+
+                    Log.Information("Patch at {0} downloaded completely", download.Patch.Url);
+
+                    this.CheckIsDone();
                 }
-
-                download.State = PatchState.Downloaded;
-                Slots[index] = SlotState.Done;
-                Progresses[index] = 0;
-                Speeds[index] = 0;
-
-                Log.Information("Patch at {0} downloaded completely", download.Patch.Url);
-
-                this.CheckIsDone();
-                this.downloadFinalizationLock.ReleaseMutex();
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Download finalization failed for {VersionId}", download.Patch.VersionId);
+                    HandleError("FinalizeDownload");
+                }
+                finally
+                {
+                    if (lockTaken)
+                        this.downloadFinalizationLock.ReleaseMutex();
+                }
             };
 
             this.AcquisitionTasks[index] = acquisitionTask;

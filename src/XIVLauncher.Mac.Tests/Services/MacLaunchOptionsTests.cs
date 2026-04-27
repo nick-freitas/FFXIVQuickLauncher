@@ -6,26 +6,27 @@ namespace XIVLauncher.Mac.Tests.Services;
 public sealed class MacLaunchOptionsTests
 {
     [TestMethod]
-    public void FromArgsEnablesExperimentalDalamudWhenFlagIsPresent()
-    {
-        var options = MacLaunchOptions.FromArgs(["--experimental-dalamud"]);
-
-        Assert.IsTrue(options.ExperimentalDalamud);
-    }
-
-    [TestMethod]
-    public void FromArgsLeavesExperimentalDalamudDisabledByDefault()
+    public void FromArgsEnablesDalamudByDefault()
     {
         var options = MacLaunchOptions.FromArgs([]);
 
-        Assert.IsFalse(options.ExperimentalDalamud);
+        Assert.IsTrue(options.UseDalamud);
     }
 
     [TestMethod]
-    public void FromArgsAcceptsCaseInsensitiveFlag()
+    public void FromArgsDisablesDalamudWhenNoDalamudFlagIsPresent()
     {
-        var options = MacLaunchOptions.FromArgs(["--EXPERIMENTAL-DALAMUD"]);
+        var options = MacLaunchOptions.FromArgs(["--no-dalamud"]);
 
-        Assert.IsTrue(options.ExperimentalDalamud);
+        Assert.IsFalse(options.UseDalamud);
     }
+
+    [TestMethod]
+    public void FromArgsAcceptsCaseInsensitiveNoDalamudFlag()
+    {
+        var options = MacLaunchOptions.FromArgs(["--NO-DALAMUD"]);
+
+        Assert.IsFalse(options.UseDalamud);
+    }
+
 }

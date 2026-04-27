@@ -11,6 +11,8 @@ public static class OfficialMacAppLocator
     public const string DefaultAppPath = "/Applications/FINAL FANTASY XIV ONLINE.app";
 
     private const string BundleIdentifier = "com.square-enix.finalfantasyxiv";
+    private const string ApplicationSupportAppFolder = "FINAL FANTASY XIV ONLINE";
+    private const string ApplicationSupportPrefix = "Bottles/published_Final_Fantasy";
     private const string RelativePrefix = "Contents/SharedSupport/finalfantasyxiv/support/published_Final_Fantasy";
     private const string RelativeWine = "Contents/SharedSupport/finalfantasyxiv/FINAL FANTASY XIV ONLINE/wine";
     private const string RelativeGameRoot = "drive_c/Program Files (x86)/SquareEnix/FINAL FANTASY XIV - A Realm Reborn";
@@ -18,11 +20,15 @@ public static class OfficialMacAppLocator
     public static OfficialMacAppInstall? TryResolveDefault() => TryResolve(new DirectoryInfo(DefaultAppPath));
 
     public static OfficialMacAppInstall? TryResolve(DirectoryInfo appBundle)
+        => TryResolve(appBundle, null);
+
+    public static OfficialMacAppInstall? TryResolve(DirectoryInfo appBundle, DirectoryInfo? applicationSupportDirectory)
     {
         if (!appBundle.Exists || !HasOfficialBundleIdentifier(appBundle))
             return null;
 
-        var winePrefix = new DirectoryInfo(Path.Combine(appBundle.FullName, RelativePrefix));
+        var bundledWinePrefix = new DirectoryInfo(Path.Combine(appBundle.FullName, RelativePrefix));
+        var winePrefix = TryGetUserWinePrefix(applicationSupportDirectory) ?? bundledWinePrefix;
         var wine = new FileInfo(Path.Combine(appBundle.FullName, RelativeWine));
         var gameRoot = new DirectoryInfo(Path.Combine(winePrefix.FullName, RelativeGameRoot));
 
@@ -30,6 +36,21 @@ public static class OfficialMacAppLocator
             return null;
 
         return new OfficialMacAppInstall(appBundle, gameRoot, wine, winePrefix);
+    }
+
+    private static DirectoryInfo? TryGetUserWinePrefix(DirectoryInfo? applicationSupportDirectory)
+    {
+        var appSupport = applicationSupportDirectory?.FullName
+                         ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        if (string.IsNullOrWhiteSpace(appSupport))
+            return null;
+
+        var winePrefix = new DirectoryInfo(Path.Combine(appSupport, ApplicationSupportAppFolder, ApplicationSupportPrefix));
+        var gameRoot = new DirectoryInfo(Path.Combine(winePrefix.FullName, RelativeGameRoot));
+
+        return winePrefix.Exists && GameHelpers.PathHasExistingInstall(gameRoot.FullName)
+            ? winePrefix
+            : null;
     }
 
     private static bool HasOfficialBundleIdentifier(DirectoryInfo appBundle)

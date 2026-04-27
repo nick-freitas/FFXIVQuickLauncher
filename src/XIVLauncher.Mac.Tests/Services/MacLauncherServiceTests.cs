@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net;
 using XIVLauncher.Common;
 using XIVLauncher.Common.Game;
 using XIVLauncher.Common.Game.OfficialMacApp;
@@ -12,13 +13,13 @@ namespace XIVLauncher.Mac.Tests.Services;
 public sealed class MacLauncherServiceTests
 {
     [TestMethod]
-    public async Task LaunchAsyncReportsBootPatchesAndDoesNotLoginOrLaunch()
+    public async Task LaunchAsyncReportsBootPatchesWhenPatchingFailsAndDoesNotLoginOrLaunch()
     {
         var client = new FakeXivLauncherClient
         {
             BootPatches = [CreatePatch("boot", "2026.04.26.0000.0000")],
         };
-        var service = new MacLauncherService(new FakeXivLauncherClientFactory(client));
+        var service = new MacLauncherService(new FakeXivLauncherClientFactory(client), new FakeMacPatchService { Result = false });
 
         var result = await service.LaunchAsync(CreateRequest());
 
@@ -29,7 +30,37 @@ public sealed class MacLauncherServiceTests
     }
 
     [TestMethod]
-    public async Task LaunchAsyncReportsGamePatchesAndDoesNotLaunch()
+    public async Task LaunchAsyncAppliesBootPatchesThenRetriesLaunchFlow()
+    {
+        var client = new FakeXivLauncherClient
+        {
+            BootPatchResults = new Queue<PatchListEntry[]>(
+            [
+                [CreatePatch("boot", "2026.04.26.0000.0000", length: 100)],
+                [],
+            ]),
+        };
+        var patchService = new FakeMacPatchService();
+        var progress = new CapturingProgress();
+        var service = new MacLauncherService(
+            new FakeXivLauncherClientFactory(client),
+            new MacLaunchOptions { UseDalamud = false },
+            new FakeMacDalamudService(),
+            patchService);
+
+        var result = await service.LaunchAsync(CreateRequest(), progress);
+
+        Assert.AreEqual(MacLaunchResultKind.Launched, result.Kind);
+        Assert.AreEqual(2, client.BootCheckCalls);
+        Assert.AreEqual(1, client.LoginCalls);
+        Assert.AreEqual(1, client.LaunchCalls);
+        Assert.AreEqual(Repository.Boot, patchService.LastRepository);
+        Assert.AreEqual(1, patchService.PatchCalls);
+        Assert.IsTrue(progress.Reports.Any(x => x.PercentComplete == 50));
+    }
+
+    [TestMethod]
+    public async Task LaunchAsyncReportsGamePatchesWhenPatchingFailsAndDoesNotLaunch()
     {
         var client = new FakeXivLauncherClient
         {
@@ -39,7 +70,7 @@ public sealed class MacLauncherServiceTests
                 PendingPatches = [CreatePatch("game", "2026.04.26.0000.0001")],
             },
         };
-        var service = new MacLauncherService(new FakeXivLauncherClientFactory(client));
+        var service = new MacLauncherService(new FakeXivLauncherClientFactory(client), new FakeMacPatchService { Result = false });
 
         var result = await service.LaunchAsync(CreateRequest());
 
@@ -47,6 +78,38 @@ public sealed class MacLauncherServiceTests
         Assert.AreEqual(1, result.PendingPatchCount);
         Assert.AreEqual(1, client.LoginCalls);
         Assert.AreEqual(0, client.LaunchCalls);
+    }
+
+    [TestMethod]
+    public async Task LaunchAsyncAppliesGamePatchesThenRetriesLaunchFlow()
+    {
+        var client = new FakeXivLauncherClient
+        {
+            LoginResults = new Queue<Launcher.LoginResult>(
+            [
+                new Launcher.LoginResult
+                {
+                    State = Launcher.LoginState.NeedsPatchGame,
+                    UniqueId = "patch-session-id",
+                    PendingPatches = [CreatePatch("game", "2026.04.26.0000.0001", length: 200)],
+                },
+                CreateSuccessfulLoginResult(),
+            ]),
+        };
+        var patchService = new FakeMacPatchService();
+        var service = new MacLauncherService(
+            new FakeXivLauncherClientFactory(client),
+            new MacLaunchOptions { UseDalamud = false },
+            new FakeMacDalamudService(),
+            patchService);
+
+        var result = await service.LaunchAsync(CreateRequest());
+
+        Assert.AreEqual(MacLaunchResultKind.Launched, result.Kind);
+        Assert.AreEqual(2, client.LoginCalls);
+        Assert.AreEqual(1, client.LaunchCalls);
+        Assert.AreEqual(Repository.Ffxiv, patchService.LastRepository);
+        Assert.AreEqual("patch-session-id", patchService.LastSessionId);
     }
 
     [TestMethod]
@@ -68,7 +131,10 @@ public sealed class MacLauncherServiceTests
                 },
             },
         };
-        var service = new MacLauncherService(new FakeXivLauncherClientFactory(client));
+        var service = new MacLauncherService(
+            new FakeXivLauncherClientFactory(client),
+            new MacLaunchOptions { UseDalamud = false },
+            new FakeMacDalamudService());
 
         var result = await service.LaunchAsync(CreateRequest());
 
@@ -78,13 +144,13 @@ public sealed class MacLauncherServiceTests
     }
 
     [TestMethod]
-    public async Task LaunchAsyncUsesNormalLaunchPathWhenExperimentalDalamudIsDisabled()
+    public async Task LaunchAsyncUsesNormalLaunchPathWhenDalamudIsDisabled()
     {
         var client = new FakeXivLauncherClient();
         var dalamud = new FakeMacDalamudService();
         IMacLauncherService service = new MacLauncherService(
             new FakeXivLauncherClientFactory(client),
-            new MacLaunchOptions { ExperimentalDalamud = false },
+            new MacLaunchOptions { UseDalamud = false },
             dalamud);
         var progress = new CollectingProgress<MacLaunchProgress>();
 
@@ -94,19 +160,18 @@ public sealed class MacLauncherServiceTests
         Assert.AreEqual(1, client.LaunchCalls);
         Assert.AreEqual(0, client.DalamudLaunchCalls);
         Assert.AreEqual(0, dalamud.PrepareCalls);
-        CollectionAssert.AreEqual(
-            new[] { "Starting game..." },
-            progress.Reports.Select(report => report.Message).ToArray());
+        Assert.AreEqual("Starting game...", progress.Reports.Last().Message);
+        Assert.IsFalse(progress.Reports.Any(report => report.Message.Contains("Dalamud")));
     }
 
     [TestMethod]
-    public async Task LaunchAsyncUsesDalamudLaunchPathWhenExperimentalDalamudIsEnabled()
+    public async Task LaunchAsyncUsesDalamudLaunchPathByDefault()
     {
         var client = new FakeXivLauncherClient();
         var dalamud = new FakeMacDalamudService { Result = MacDalamudPrepareResult.Prepared(new FakeGameRunner()) };
         var service = new MacLauncherService(
             new FakeXivLauncherClientFactory(client),
-            new MacLaunchOptions { ExperimentalDalamud = true },
+            new MacLaunchOptions(),
             dalamud);
         var progress = new CollectingProgress<MacLaunchProgress>();
 
@@ -116,13 +181,9 @@ public sealed class MacLauncherServiceTests
         Assert.AreEqual(0, client.LaunchCalls);
         Assert.AreEqual(1, client.DalamudLaunchCalls);
         Assert.AreEqual(1, dalamud.PrepareCalls);
-        CollectionAssert.AreEqual(
-            new[]
-            {
-                "Preparing Dalamud...",
-                "Starting game with experimental Dalamud...",
-            },
-            progress.Reports.Select(report => report.Message).ToArray());
+        var messages = progress.Reports.Select(report => report.Message).ToArray();
+        CollectionAssert.Contains(messages, "Preparing Dalamud...");
+        Assert.AreEqual("Starting game with Dalamud...", messages.Last());
     }
 
     [TestMethod]
@@ -132,7 +193,7 @@ public sealed class MacLauncherServiceTests
         var dalamud = new FakeMacDalamudService { Result = MacDalamudPrepareResult.Failed("Could not prepare Dalamud: network failed") };
         var service = new MacLauncherService(
             new FakeXivLauncherClientFactory(client),
-            new MacLaunchOptions { ExperimentalDalamud = true },
+            new MacLaunchOptions(),
             dalamud);
 
         var result = await service.LaunchAsync(CreateRequest());
@@ -158,6 +219,37 @@ public sealed class MacLauncherServiceTests
     }
 
     [TestMethod]
+    public async Task LaunchAsyncReportsNoServiceOauthDetails()
+    {
+        var client = new FakeXivLauncherClient
+        {
+            LoginResult = new Launcher.LoginResult
+            {
+                State = Launcher.LoginState.NoService,
+                OauthLogin = new Launcher.OauthLoginResult
+                {
+                    Playable = false,
+                    TermsAccepted = true,
+                    Region = 3,
+                    MaxExpansion = 5,
+                    SessionId = "oauth-session",
+                },
+            },
+        };
+        var service = new MacLauncherService(new FakeXivLauncherClientFactory(client), new FakeMacPatchService());
+
+        var result = await service.LaunchAsync(CreateRequest());
+
+        Assert.AreEqual(MacLaunchResultKind.NoService, result.Kind);
+        StringAssert.Contains(result.Message, "playable=False");
+        StringAssert.Contains(result.Message, "termsAccepted=True");
+        StringAssert.Contains(result.Message, "region=3");
+        StringAssert.Contains(result.Message, "freeTrial=False");
+        StringAssert.Contains(result.Message, "steam=False");
+    }
+
+
+    [TestMethod]
     public async Task XivLauncherClientDisablesUidCacheForLogin()
     {
         var launcher = new FakeLauncherCore();
@@ -166,6 +258,17 @@ public sealed class MacLauncherServiceTests
         await client.LoginAsync(CreateRequest());
 
         Assert.IsFalse(launcher.LastUseCache);
+    }
+
+    [TestMethod]
+    public async Task XivLauncherClientFactoryUsesMacOauthUserAgent()
+    {
+        using var httpClient = new HttpClient(new FrontierConfigHandler());
+        var factory = new XivLauncherClientFactory(httpClient);
+
+        var client = (XivLauncherClient)await factory.CreateAsync();
+
+        Assert.AreEqual(Launcher.MacOfficialUserAgent, client.OauthUserAgent);
     }
 
     private static MacLaunchRequest CreateRequest(bool isSteam = false)
@@ -187,6 +290,9 @@ public sealed class MacLauncherServiceTests
     }
 
     private static PatchListEntry CreatePatch(string repository, string version)
+        => CreatePatch(repository, version, length: 1);
+
+    private static PatchListEntry CreatePatch(string repository, string version, long length)
         => new()
         {
             VersionId = version,
@@ -194,7 +300,22 @@ public sealed class MacLauncherServiceTests
             Url = $"http://patch-dl.ffxiv.com/game/4e9a232b/{repository}/{version}.patch",
             HashBlockSize = 0,
             Hashes = [],
-            Length = 1,
+            Length = length,
+        };
+
+    private static Launcher.LoginResult CreateSuccessfulLoginResult()
+        => new()
+        {
+            State = Launcher.LoginState.Ok,
+            UniqueId = "session-id",
+            OauthLogin = new Launcher.OauthLoginResult
+            {
+                Region = 3,
+                MaxExpansion = 5,
+                Playable = true,
+                TermsAccepted = true,
+                SessionId = "oauth-session",
+            },
         };
 
     private sealed class FakeXivLauncherClientFactory : IXivLauncherClientFactory
@@ -214,19 +335,13 @@ public sealed class MacLauncherServiceTests
     {
         public PatchListEntry[] BootPatches { get; set; } = [];
 
-        public Launcher.LoginResult LoginResult { get; set; } = new()
-        {
-            State = Launcher.LoginState.Ok,
-            UniqueId = "session-id",
-            OauthLogin = new Launcher.OauthLoginResult
-            {
-                Region = 3,
-                MaxExpansion = 5,
-                Playable = true,
-                TermsAccepted = true,
-                SessionId = "oauth-session",
-            },
-        };
+        public Queue<PatchListEntry[]> BootPatchResults { get; set; } = [];
+
+        public Launcher.LoginResult LoginResult { get; set; } = CreateSuccessfulLoginResult();
+
+        public Queue<Launcher.LoginResult> LoginResults { get; set; } = [];
+
+        public int BootCheckCalls { get; private set; }
 
         public int LoginCalls { get; private set; }
 
@@ -235,12 +350,15 @@ public sealed class MacLauncherServiceTests
         public int DalamudLaunchCalls { get; private set; }
 
         public Task<PatchListEntry[]> CheckBootVersionAsync(DirectoryInfo gamePath, CancellationToken cancellationToken = default)
-            => Task.FromResult(this.BootPatches);
+        {
+            this.BootCheckCalls++;
+            return Task.FromResult(this.BootPatchResults.Count > 0 ? this.BootPatchResults.Dequeue() : this.BootPatches);
+        }
 
         public Task<Launcher.LoginResult> LoginAsync(MacLaunchRequest request, CancellationToken cancellationToken = default)
         {
             this.LoginCalls++;
-            return Task.FromResult(this.LoginResult);
+            return Task.FromResult(this.LoginResults.Count > 0 ? this.LoginResults.Dequeue() : this.LoginResult);
         }
 
         public bool LaunchGame(Launcher.LoginResult loginResult, MacLaunchRequest request, IGameRunner? runner = null)
@@ -271,6 +389,32 @@ public sealed class MacLauncherServiceTests
         }
     }
 
+    private sealed class FakeMacPatchService : IMacPatchService
+    {
+        public bool Result { get; set; } = true;
+
+        public int PatchCalls { get; private set; }
+
+        public Repository? LastRepository { get; private set; }
+
+        public string? LastSessionId { get; private set; }
+
+        public Task<bool> PatchAsync(
+            Repository repository,
+            PatchListEntry[] patches,
+            MacLaunchRequest request,
+            string? sessionId,
+            IProgress<MacLaunchProgress>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            this.PatchCalls++;
+            this.LastRepository = repository;
+            this.LastSessionId = sessionId;
+            progress?.Report(new MacLaunchProgress(MacLaunchStage.Patching, $"{repository} patching", 50, TimeSpan.FromSeconds(10)));
+            return Task.FromResult(this.Result);
+        }
+    }
+
     private sealed class FakeGameRunner : IGameRunner
     {
         public Process? Start(string path, string workingDirectory, string arguments, IDictionary<string, string> environment, DpiAwareness dpiAwareness)
@@ -289,6 +433,8 @@ public sealed class MacLauncherServiceTests
 
     private sealed class FakeLauncherCore : IXivLauncherCore
     {
+        public string OauthUserAgent => Launcher.WindowsOfficialUserAgent;
+
         public bool? LastUseCache { get; private set; }
 
         public Task<PatchListEntry[]> CheckBootVersionAsync(DirectoryInfo gamePath)
@@ -324,5 +470,26 @@ public sealed class MacLauncherServiceTests
 
         public bool LaunchGame(Launcher.LoginResult loginResult, MacLaunchRequest request, IGameRunner? runner = null)
             => true;
+    }
+
+    private sealed class FrontierConfigHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""
+                    {
+                        "frontierUrl": "https://launcher.finalfantasyxiv.com/v650/index.html?rc_lang={0}&time={1}"
+                    }
+                    """),
+            });
+    }
+
+    private sealed class CapturingProgress : IProgress<MacLaunchProgress>
+    {
+        public List<MacLaunchProgress> Reports { get; } = [];
+
+        public void Report(MacLaunchProgress value)
+            => this.Reports.Add(value);
     }
 }

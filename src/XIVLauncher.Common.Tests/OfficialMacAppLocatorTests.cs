@@ -25,7 +25,8 @@ namespace XIVLauncher.Common.Tests
         public void TryResolveAcceptsOfficialBundle()
         {
             var root = CreateOfficialBundle();
-            var result = OfficialMacAppLocator.TryResolve(root);
+            var appSupport = CreateApplicationSupportRoot();
+            var result = OfficialMacAppLocator.TryResolve(root, appSupport);
 
             Assert.IsNotNull(result);
             var expectedWinePrefix = Path.Combine(
@@ -56,19 +57,71 @@ namespace XIVLauncher.Common.Tests
         }
 
         [TestMethod]
+        public void TryResolvePrefersUserBottleWhenPresent()
+        {
+            var root = CreateOfficialBundle();
+            var appSupport = CreateApplicationSupportRoot(createGameFolders: true);
+            var result = OfficialMacAppLocator.TryResolve(root, appSupport);
+
+            Assert.IsNotNull(result);
+            var expectedWinePrefix = Path.Combine(
+                appSupport.FullName,
+                "FINAL FANTASY XIV ONLINE",
+                "Bottles",
+                "published_Final_Fantasy");
+            var expectedGameRoot = Path.Combine(
+                expectedWinePrefix,
+                "drive_c",
+                "Program Files (x86)",
+                "SquareEnix",
+                "FINAL FANTASY XIV - A Realm Reborn");
+
+            Assert.AreEqual(expectedWinePrefix, result.WinePrefix.FullName);
+            Assert.AreEqual(expectedGameRoot, result.GameRoot.FullName);
+        }
+
+        [TestMethod]
         public void TryResolveRejectsWrongBundleIdentifier()
         {
             var root = CreateOfficialBundle(bundleIdentifier: "example.not.ffxiv");
+            var appSupport = CreateApplicationSupportRoot();
 
-            Assert.IsNull(OfficialMacAppLocator.TryResolve(root));
+            Assert.IsNull(OfficialMacAppLocator.TryResolve(root, appSupport));
         }
 
         [TestMethod]
         public void TryResolveRejectsMissingGameFolders()
         {
             var root = CreateOfficialBundle(createGameFolders: false);
+            var appSupport = CreateApplicationSupportRoot();
 
-            Assert.IsNull(OfficialMacAppLocator.TryResolve(root));
+            Assert.IsNull(OfficialMacAppLocator.TryResolve(root, appSupport));
+        }
+
+        private DirectoryInfo CreateApplicationSupportRoot(bool createGameFolders = false)
+        {
+            var temporaryRoot = Path.Combine(Path.GetTempPath(), "OfficialMacAppLocatorTests", Guid.NewGuid().ToString("N"));
+            temporaryRoots.Add(temporaryRoot);
+
+            var appSupport = Directory.CreateDirectory(temporaryRoot);
+
+            if (createGameFolders)
+            {
+                var gameRoot = Path.Combine(
+                    appSupport.FullName,
+                    "FINAL FANTASY XIV ONLINE",
+                    "Bottles",
+                    "published_Final_Fantasy",
+                    "drive_c",
+                    "Program Files (x86)",
+                    "SquareEnix",
+                    "FINAL FANTASY XIV - A Realm Reborn");
+
+                Directory.CreateDirectory(Path.Combine(gameRoot, "boot"));
+                Directory.CreateDirectory(Path.Combine(gameRoot, "game"));
+            }
+
+            return appSupport;
         }
 
         private DirectoryInfo CreateOfficialBundle(

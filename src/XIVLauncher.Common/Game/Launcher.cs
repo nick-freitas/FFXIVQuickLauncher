@@ -31,13 +31,14 @@ public class Launcher
     private readonly string frontierUrlTemplate;
     private readonly string acceptLanguage;
 
-    public Launcher(ISteam? steam, IUniqueIdCache uniqueIdCache, string frontierUrl, string acceptLanguage)
+    public Launcher(ISteam? steam, IUniqueIdCache uniqueIdCache, string frontierUrl, string acceptLanguage, string? userAgent = null)
     {
         this.steam = steam;
         this.uniqueIdCache = uniqueIdCache;
 
         this.frontierUrlTemplate = frontierUrl ?? throw new Exception("Frontier URL template is null, this is now required");
         this.acceptLanguage = acceptLanguage;
+        this.userAgent = userAgent ?? WindowsOfficialUserAgent;
 
         var handler = new SocketsHttpHandler
         {
@@ -48,15 +49,20 @@ public class Launcher
         this.client = new HttpClient(handler);
     }
 
-    public Launcher(byte[] overriddenSteamTicket, IUniqueIdCache uniqueIdCache, string frontierUrl, string acceptLanguage)
-        : this(steam: null, uniqueIdCache, frontierUrl, acceptLanguage)
+    public Launcher(byte[] overriddenSteamTicket, IUniqueIdCache uniqueIdCache, string frontierUrl, string acceptLanguage, string? userAgent = null)
+        : this(steam: null, uniqueIdCache, frontierUrl, acceptLanguage, userAgent)
     {
         this.overriddenSteamTicket = overriddenSteamTicket;
     }
 
     // The user agent for frontier pages. {0} has to be replaced by a unique computer id and its checksum
     private const string UserAgentTemplate = "SQEXAuthor/2.0.0(Windows 6.2; ja-jp; {0})";
-    private readonly string userAgent = GenerateUserAgent();
+    public const string MacOfficialUserAgent = "macSQEXAuthor/2.0.0(MacOSX; ja-jp)";
+    private readonly string userAgent;
+
+    public static string WindowsOfficialUserAgent => GenerateUserAgent();
+
+    public string OauthUserAgent => this.userAgent;
 
     private static readonly string[] FilesToHash =
     {
@@ -170,7 +176,8 @@ public class Launcher
             {
                 return new LoginResult
                 {
-                    State = LoginState.NoService
+                    State = LoginState.NoService,
+                    OauthLogin = oauthLoginResult
                 };
             }
 

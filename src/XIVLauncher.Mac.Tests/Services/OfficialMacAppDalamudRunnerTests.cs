@@ -33,9 +33,31 @@ public sealed class OfficialMacAppDalamudRunnerTests
         Assert.AreEqual(install.WinePrefix.FullName, plan.Environment["WINEPREFIX"]);
         Assert.AreEqual(@"Z:\runtime", plan.Environment["DALAMUD_RUNTIME"]);
         Assert.AreEqual(@"Z:\runtime", plan.Environment["DOTNET_ROOT"]);
+        Assert.AreEqual("0", plan.Environment["DOTNET_MULTILEVEL_LOOKUP"]);
         StringAssert.Contains(plan.Arguments, @"""Z:\Users\test\Library\Application Support\XIVLauncherMac\addon\Hooks\1\Dalamud.Injector.exe""");
         StringAssert.Contains(plan.Arguments, "--mode=inject");
         StringAssert.Contains(plan.Arguments, @"--game=""C:\game\ffxiv_dx11.exe""");
+    }
+
+    [TestMethod]
+    public void BuildStartInfoUsesProvidedRuntimeWhenEnvironmentOmitsRuntime()
+    {
+        var plan = OfficialMacAppDalamudRunner.BuildLaunchPlan(
+            CreateInstall(),
+            new FileInfo("/runner/Dalamud.Injector.exe"),
+            fakeLogin: false,
+            noPlugins: false,
+            noThirdPlugins: false,
+            gameExe: new FileInfo("/game/ffxiv_dx11.exe"),
+            gameArgs: "args",
+            environment: new Dictionary<string, string>(),
+            loadMethod: DalamudLoadMethod.DllInject,
+            CreateDalamudStartInfo(),
+            new DirectoryInfo("/Users/test/Library/Application Support/XIVLauncherMac/runtime"));
+
+        Assert.AreEqual(@"Z:\Users\test\Library\Application Support\XIVLauncherMac\runtime", plan.Environment["DALAMUD_RUNTIME"]);
+        Assert.AreEqual(@"Z:\Users\test\Library\Application Support\XIVLauncherMac\runtime", plan.Environment["DOTNET_ROOT"]);
+        Assert.AreEqual("0", plan.Environment["DOTNET_MULTILEVEL_LOOKUP"]);
     }
 
     [TestMethod]

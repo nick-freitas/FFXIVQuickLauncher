@@ -1,4 +1,6 @@
+using System;
 using XIVLauncher.Common;
+using XIVLauncher.Common.Game;
 using XIVLauncher.Common.Game.OfficialMacApp;
 
 namespace XIVLauncher.Mac.Services;
@@ -14,10 +16,18 @@ public sealed record MacLaunchRequest(
 
 public enum MacLaunchStage
 {
+    Preparing,
+    CheckingPatches,
+    LoggingIn,
+    Patching,
     Launching,
 }
 
-public sealed record MacLaunchProgress(MacLaunchStage Stage, string Message);
+public sealed record MacLaunchProgress(
+    MacLaunchStage Stage,
+    string Message,
+    double? PercentComplete = null,
+    TimeSpan? EstimatedRemaining = null);
 
 public enum MacLaunchResultKind
 {
@@ -52,8 +62,18 @@ public sealed class MacLaunchResult
             $"{patchType} patching required. {patchCount} patch{(patchCount == 1 ? string.Empty : "es")} pending.",
             patchCount);
 
-    public static MacLaunchResult NoService()
-        => new(MacLaunchResultKind.NoService, "This account does not have an active playable service account.");
+    public static MacLaunchResult NoService(Launcher.OauthLoginResult? oauthLogin = null, bool isFreeTrial = false, bool isSteam = false)
+    {
+        var message = "This account does not have an active playable service account.";
+
+        if (oauthLogin is not null)
+        {
+            message += $" Square Enix response: playable={oauthLogin.Playable}, termsAccepted={oauthLogin.TermsAccepted}, region={oauthLogin.Region}, maxExpansion={oauthLogin.MaxExpansion}.";
+            message += $" Login flags: freeTrial={isFreeTrial}, steam={isSteam}.";
+        }
+
+        return new(MacLaunchResultKind.NoService, message);
+    }
 
     public static MacLaunchResult NoTerms()
         => new(MacLaunchResultKind.NoTerms, "Terms must be accepted in the official launcher before continuing.");
